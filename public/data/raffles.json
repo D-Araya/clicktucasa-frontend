@@ -1,0 +1,232 @@
+[
+  {
+    "id": "raffle-1",
+    "title": "Casa Mediterránea con Vista al Mar",
+    "tagline": "Terraza panorámica sobre la bahía, a 400 m de la playa principal.",
+    "city": "Zapallar",
+    "region": "Región de Valparaíso",
+    "houseAddress": "Camino Costero 1240, Zapallar",
+    "houseValue": 185000000,
+    "houseValueUf": 4620,
+    "ticketPrice": 15000,
+    "soldTickets": 14200,
+    "reservedTickets": 300,
+    "status": "ACTIVE",
+    "endDate": "2026-11-28",
+    "imageUrl": "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80",
+    "specs": {
+      "bedrooms": 4,
+      "bathrooms": 3,
+      "areaSqM": 245,
+      "yearBuilt": 2019,
+      "hasPool": true,
+      "hasGarage": true,
+      "energyRating": "A"
+    },
+    "notary": {
+      "notaryOffice": "Notaría Vergara Bustos, Valparaíso",
+      "cbrRegistration": "CBR-VAL-2026-08841",
+      "siiFiscalRole": "04521-118",
+      "protocolNumber": "REP-2026-14780",
+      "isVerified": true
+    },
+    "features": [
+      "Escritura inscrita en el Conservador de Bienes Raíces",
+      "Contribuciones y gastos comunes al día",
+      "Sorteo ante notario con acta pública",
+      "Entrega en un plazo máximo de 90 días"
+    ]
+  },
+  {
+    "id": "raffle-2",
+    "title": "Departamento Los Cerezos",
+    "tagline": "Piso 14 con vista despejada, edificio con conserjería 24/7.",
+    "city": "Viña del Mar",
+    "region": "Región de Valparaíso",
+    "houseAddress": "Av. San Martín 456, Viña del Mar",
+    "houseValue": 120000000,
+    "houseValueUf": 2996,
+    "ticketPrice": 12000,
+    "soldTickets": 9500,
+    "reservedTickets": 1200,
+    "status": "ACTIVE",
+    "endDate": "2027-01-15",
+    "imageUrl": "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=80",
+    "specs": {
+      "bedrooms": 3,
+      "bathrooms": 2,
+      "areaSqM": 118,
+      "yearBuilt": 2021,
+      "hasPool": true,
+      "hasGarage": true,
+      "energyRating": "B"
+    },
+    "notary": {
+      "notaryOffice": "Notaría Iturriaga Correa, Viña del Mar",
+      "cbrRegistration": "CBR-VIN-2026-03192",
+      "siiFiscalRole": "02219-045",
+      "protocolNumber": "REP-2026-09214",
+      "isVerified": true
+    },
+    "features": [
+      "Escritura inscrita en el Conservador de Bienes Raíces",
+      "Estacionamiento y bodega incluidos",
+      "Sorteo ante notario con acta pública"
+    ]
+  },
+  {
+    "id": "raffle-3",
+    "title": "Casa Colonial Restaurada",
+    "tagline": "Patio interior con parrón centenario, a tres cuadras de la plaza.",
+    "city": "La Serena",
+    "region": "Región de Coquimbo",
+    "houseAddress": "Calle Los Carrera 789, La Serena",
+    "houseValue": 95000000,
+    "houseValueUf": 2372,
+    "ticketPrice": 9000,
+    "soldTickets": 14000,
+    "reservedTickets": 150,
+    "status": "ACTIVE",
+    "endDate": "2026-10-05",
+    "imageUrl": "https://images.unsplash.com/photo-1568605114967-8130f3a36994?auto=format&fit=crop&w=1200&q=80",
+    "specs": {
+      "bedrooms": 3,
+      "bathrooms": 2,
+      "areaSqM": 162,
+      "yearBuilt": 1948,
+      "hasPool": false,
+      "hasGarage": true,
+      "energyRating": "C"
+    },
+    "notary": {
+      "notaryOffice": "Notaría Pizarro Alfaro, La Serena",
+      "cbrRegistration": "CBR-SER-2026-01477",
+      "siiFiscalRole": "01108-023",
+      "protocolNumber": "REP-2026-05530",
+      "isVerified": true
+    },
+    "features": [
+      "Inmueble restaurado con permiso municipal vigente",
+      "Escritura inscrita en el Conservador de Bienes Raíces",
+      "Sorteo ante notario con acta pública"
+    ]
+  },
+  {
+    "id": "raffle-4",
+    "title": "Refugio de Montaña en Pucón",
+    "tagline": "Construcción en madera nativa con tinaja y vista al volcán.",
+    "city": "Pucón",
+    "region": "Región de La Araucanía",
+    "houseAddress": "Camino Villarrica km 8, Pucón",
+    "houseValue": 142000000,
+    "houseValueUf": 3546,
+    "ticketPrice": 11000,
+    "soldTickets": 6100,
+    "reservedTickets": 820,
+    "status": "ACTIVE",
+    "endDate": "2027-03-20",
+    "imageUrl": "https://images.unsplash.com/photo-1449158743715-0a90ebb6d2d8?auto=format&fit=crop&w=1200&q=80",
+    "specs": {
+      "bedrooms": 4,
+      "bathrooms": 2,
+      "areaSqM": 198,
+      "yearBuilt": 2017,
+      "hasPool": false,
+      "hasGarage": true,
+      "energyRating": "B"
+    },
+    "notary": {
+      "notaryOffice": "Notaría Riquelme Soto, Temuco",
+      "cbrRegistration": "CBR-PUC-2026-00932",
+      "siiFiscalRole": "07733-091",
+      "protocolNumber": "REP-2026-11002",
+      "isVerified": true
+    },
+    "features": [
+      "Terreno de 5.000 m² con bosque nativo",
+      "Escritura inscrita en el Conservador de Bienes Raíces",
+      "Sorteo ante notario con acta pública"
+    ]
+  },
+  {
+    "id": "raffle-5",
+    "title": "Casa Familiar en Chicureo",
+    "tagline": "Condominio cerrado con áreas verdes y acceso controlado.",
+    "city": "Colina",
+    "region": "Región Metropolitana",
+    "houseAddress": "Camino Chicureo 3120, Colina",
+    "houseValue": 210000000,
+    "houseValueUf": 5244,
+    "ticketPrice": 18000,
+    "soldTickets": 3400,
+    "reservedTickets": 260,
+    "status": "ACTIVE",
+    "endDate": "2027-05-30",
+    "imageUrl": "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1200&q=80",
+    "specs": {
+      "bedrooms": 5,
+      "bathrooms": 4,
+      "areaSqM": 320,
+      "yearBuilt": 2022,
+      "hasPool": true,
+      "hasGarage": true,
+      "energyRating": "A"
+    },
+    "notary": {
+      "notaryOffice": "Notaría Undurraga Prado, Santiago",
+      "cbrRegistration": "CBR-STG-2026-22015",
+      "siiFiscalRole": "09912-410",
+      "protocolNumber": "REP-2026-30118",
+      "isVerified": true
+    },
+    "features": [
+      "Condominio con seguridad 24/7 y áreas comunes",
+      "Escritura inscrita en el Conservador de Bienes Raíces",
+      "Contribuciones y gastos comunes al día",
+      "Sorteo ante notario con acta pública"
+    ]
+  },
+  {
+    "id": "raffle-6",
+    "title": "Casa Patrimonial de Castro",
+    "tagline": "Palafito restaurado sobre el fiordo, con muelle propio.",
+    "city": "Castro",
+    "region": "Región de Los Lagos",
+    "houseAddress": "Costanera Pedro Montt 145, Castro",
+    "houseValue": 88000000,
+    "houseValueUf": 2197,
+    "ticketPrice": 8000,
+    "soldTickets": 15000,
+    "reservedTickets": 0,
+    "status": "DRAWN",
+    "endDate": "2026-06-14",
+    "imageUrl": "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80",
+    "specs": {
+      "bedrooms": 3,
+      "bathrooms": 1,
+      "areaSqM": 134,
+      "yearBuilt": 1962,
+      "hasPool": false,
+      "hasGarage": false,
+      "energyRating": "D"
+    },
+    "notary": {
+      "notaryOffice": "Notaría Barrientos Gómez, Castro",
+      "cbrRegistration": "CBR-CAS-2026-00415",
+      "siiFiscalRole": "05540-007",
+      "protocolNumber": "REP-2026-02218",
+      "isVerified": true
+    },
+    "features": [
+      "Inmueble declarado zona típica, con permisos al día",
+      "Escritura inscrita en el Conservador de Bienes Raíces",
+      "Sorteo ante notario con acta pública"
+    ],
+    "winner": {
+      "ticketNumber": 7431,
+      "ownerId": "comprador7431@clicktucasa.cl",
+      "drawnAt": "2026-06-14",
+      "verificationHash": "a41f9c07d5b3e8621f7a04cd93be5518"
+    }
+  }
+]
