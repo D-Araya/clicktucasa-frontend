@@ -28,3 +28,7 @@ contexto/
 
 # Salida de herramientas de análisis locales
 graphify-out/
+
+# Agentes
+.agent/
+.agents/
