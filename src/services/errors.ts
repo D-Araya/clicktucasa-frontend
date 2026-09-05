@@ -1,29 +1,32 @@
+import { t } from '../i18n';
+
 /**
- * Errores de negocio del servicio simulado de ClickTuCasa.
+ * Errores de negocio de ClickTuCasa.
  *
- * Cada clase es el equivalente TypeScript de una excepción de dominio real
- * del backend Java (domain.exception.*). No son errores "de simulación":
- * representan reglas de negocio permanentes que el servicio aplica siempre
- * que corresponda, tal como lo haría el backend.
+ * Cada clase es el equivalente TypeScript de una excepción de dominio del
+ * backend Java (`domain.exception.*`) y se construye a partir del
+ * `errorCode` que devuelve el `GlobalExceptionHandler`. Así el contrato de
+ * errores se cierra de punta a punta: el backend clasifica, el frontend
+ * reacciona con el mismo vocabulario y la persona ve un mensaje legible.
  */
 
-/** Equivalente a `RaffleNotFoundException`. */
+/** Equivalente a `RaffleNotFoundException` (HTTP 404). */
 export class RaffleNotFoundError extends Error {
-  constructor(raffleId: string) {
-    super(`No se encontró una rifa con id "${raffleId}".`);
+  constructor(message: string) {
+    super(message);
     this.name = 'RaffleNotFoundError';
   }
 }
 
-/** Equivalente a `TicketNotFoundException`. */
+/** Equivalente a `TicketNotFoundException` (HTTP 404). */
 export class TicketNotFoundError extends Error {
-  constructor(ticketNumber: number, raffleId: string) {
-    super(`El boleto #${ticketNumber} no existe en la rifa "${raffleId}".`);
+  constructor(message: string) {
+    super(message);
     this.name = 'TicketNotFoundError';
   }
 }
 
-/** Equivalente a `TicketNotAvailableException`. */
+/** Equivalente a `TicketNotAvailableException` (HTTP 409). */
 export class TicketNotAvailableError extends Error {
   constructor(message: string) {
     super(message);
@@ -31,7 +34,7 @@ export class TicketNotAvailableError extends Error {
   }
 }
 
-/** Equivalente a `InvalidRaffleOperationException`. */
+/** Equivalente a `InvalidRaffleOperationException` (HTTP 409 / 400). */
 export class InvalidRaffleOperationError extends Error {
   constructor(message: string) {
     super(message);
@@ -39,18 +42,21 @@ export class InvalidRaffleOperationError extends Error {
   }
 }
 
-/** Equivalente a `PaymentFailedException`. */
+/** Equivalente a `PaymentFailedException` (HTTP 402). */
 export class PaymentFailedError extends Error {
-  constructor(message: string = 'La pasarela de pago rechazó el cobro. Intenta nuevamente.') {
+  constructor(message: string = t('error.paymentDeclined')) {
     super(message);
     this.name = 'PaymentFailedError';
   }
 }
 
-/** Error de la capa de resiliencia de red (servidor simulado caído/inestable). */
-export class SimulatedServerError extends Error {
-  constructor(message: string = 'Error de servidor simulado. Intenta nuevamente.') {
+/** Fallo de transporte: el backend no respondió o devolvió algo inesperado. */
+export class ApiTransportError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number = 0) {
     super(message);
-    this.name = 'SimulatedServerError';
+    this.name = 'ApiTransportError';
+    this.status = status;
   }
 }

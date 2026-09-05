@@ -1,4 +1,5 @@
 import { renderIcon } from '../../utils/icon.utils';
+import { t } from '../../i18n';
 
 export type ToastTone = 'success' | 'error' | 'info';
 
@@ -72,7 +73,7 @@ export class ToastHost {
     const closeButton = document.createElement('button');
     closeButton.type = 'button';
     closeButton.className = 'shrink-0 text-slate-500 hover:text-slate-200 transition-colors cursor-pointer';
-    closeButton.setAttribute('aria-label', 'Cerrar aviso');
+    closeButton.setAttribute('aria-label', t('toast.close'));
     closeButton.innerHTML = renderIcon('close', 'w-4 h-4');
 
     const dismiss = (): void => {

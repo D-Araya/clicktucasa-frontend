@@ -1,9 +1,10 @@
 import { renderIcon } from '../../utils/icon.utils';
+import { t } from '../../i18n';
 
-/** Vistas de estado vacío / error, con acción de recuperación (Pilar 3). */
+/** Vistas de estado vacío / error, con acción de recuperación. */
 
 export function createEmptyStateElement(
-  message: string = 'No hay propiedades que coincidan con tu búsqueda.',
+  message: string = t('state.empty.default'),
   actionLabel?: string,
   onAction?: () => void,
 ): HTMLElement {
@@ -18,7 +19,7 @@ export function createEmptyStateElement(
 
   const title = document.createElement('p');
   title.className = 'font-bold text-slate-200 font-display';
-  title.textContent = 'Sin resultados';
+  title.textContent = t('state.empty.title');
 
   const detail = document.createElement('p');
   detail.className = 'text-sm text-slate-400 mt-1 max-w-md';
@@ -52,7 +53,7 @@ export function createErrorStateElement(message: string, onRetry?: () => void): 
 
   const title = document.createElement('p');
   title.className = 'font-bold text-rose-300 font-display';
-  title.textContent = '¡Ups! Ocurrió un problema.';
+  title.textContent = t('state.error.title');
 
   const detail = document.createElement('p');
   detail.className = 'text-sm text-slate-400 mt-1 max-w-md';
@@ -66,7 +67,7 @@ export function createErrorStateElement(message: string, onRetry?: () => void): 
     retryButton.className =
       'mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-slate-950 text-sm font-semibold hover:bg-white transition-colors cursor-pointer';
     retryButton.innerHTML = renderIcon('refresh', 'w-4 h-4');
-    retryButton.appendChild(document.createTextNode('Reintentar'));
+    retryButton.appendChild(document.createTextNode(t('state.error.retry')));
     retryButton.addEventListener('click', () => onRetry());
     container.appendChild(retryButton);
   }

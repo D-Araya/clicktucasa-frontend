@@ -1,13 +1,14 @@
-import { type Raffle, RaffleStatus, summarizeRaffle } from '../../models';
+import { type RaffleCatalogItem, RaffleStatus, summarizeRaffle } from '../../models';
 import { formatCurrencyCompact, formatNumber } from '../../utils/format.utils';
 import { renderIcon } from '../../utils/icon.utils';
+import { plural, t } from '../../i18n';
 
 /**
  * Cabecera del catálogo: propuesta de valor, métricas agregadas del
  * portafolio y accesos rápidos por ciudad.
  */
 export function createHeroBannerElement(
-  raffles: readonly Raffle[],
+  raffles: readonly RaffleCatalogItem[],
   selectedCity: string,
   onSelectCity: (city: string) => void,
 ): HTMLElement {
@@ -18,7 +19,16 @@ export function createHeroBannerElement(
     (total, raffle) => total + summarizeRaffle(raffle).soldCount,
     0,
   );
-  const certifiedCount = raffles.filter((raffle) => raffle.notary.isVerified).length;
+  // Las ciudades y la certificación notarial son datos de presentación que
+  // el contrato actual del backend no expone: la cabecera se adapta a lo
+  // que realmente llega en vez de mostrar métricas vacías.
+  const cities = [...new Set(
+    activeRaffles
+      .map((raffle) => raffle.city)
+      .filter((city): city is string => city !== undefined),
+  )].sort((a, b) => a.localeCompare(b, 'es'));
+  const certifiedCount = raffles.filter((raffle) => raffle.notary?.isVerified === true).length;
+  const hasCertification = raffles.some((raffle) => raffle.notary !== undefined);
 
   const section = document.createElement('section');
   section.className =
@@ -33,29 +43,52 @@ export function createHeroBannerElement(
         <div class="flex-1 space-y-5 animate-slide-up">
           <span class="inline-flex items-center gap-2 text-xs font-semibold bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-full">
             ${renderIcon('sparkles', 'w-3.5 h-3.5')}
-            Sorteos con acta notarial pública
+            ${t('hero.badge')}
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
           </span>
 
           <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight font-display text-white">
-            Una casa, quince mil boletos,
+            ${t('hero.titleLine1')}
             <span class="block bg-gradient-to-r from-indigo-400 via-sky-300 to-emerald-400 bg-clip-text text-transparent">
-              un ganador verificable.
+              ${t('hero.titleLine2')}
             </span>
           </h1>
 
           <p class="text-base sm:text-lg text-slate-300 leading-relaxed max-w-xl">
-            Cada propiedad está inscrita en el Conservador de Bienes Raíces antes de emitir el
-            primer boleto. El sorteo se realiza ante notario cuando se alcanza el mínimo legal.
+            ${t('hero.lead')}
           </p>
 
           <div id="hero-cities" class="flex flex-wrap gap-2 pt-1"></div>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-3 lg:w-80">
-          ${buildMetricCard('building', 'Portafolio en sorteo', formatCurrencyCompact(portfolioValue), `${activeRaffles.length} propiedades activas`)}
-          ${buildMetricCard('shield', 'Certificación legal', `${certifiedCount}/${raffles.length}`, 'Notaría y CBR verificados')}
-          ${buildMetricCard('ticket', 'Boletos vendidos', formatNumber(soldTickets), 'Participaciones registradas')}
+          ${buildMetricCard(
+            'building',
+            t('hero.metric.portfolio'),
+            formatCurrencyCompact(portfolioValue),
+            plural('hero.metric.portfolioNote.one', 'hero.metric.portfolioNote.other', activeRaffles.length, {
+              count: formatNumber(activeRaffles.length),
+            }),
+          )}
+          ${hasCertification
+            ? buildMetricCard(
+                'shield',
+                t('hero.metric.certification'),
+                `${certifiedCount}/${raffles.length}`,
+                t('hero.metric.certificationNote'),
+              )
+            : buildMetricCard(
+                'building',
+                t('hero.metric.published'),
+                formatNumber(raffles.length),
+                t('hero.metric.publishedNote'),
+              )}
+          ${buildMetricCard(
+            'ticket',
+            t('hero.metric.soldTickets'),
+            formatNumber(soldTickets),
+            t('hero.metric.soldTicketsNote'),
+          )}
         </div>
       </div>
     </div>
@@ -64,12 +97,9 @@ export function createHeroBannerElement(
   // ── Chips de ciudad ────────────────────────────────────────────
   const citiesContainer = section.querySelector<HTMLElement>('#hero-cities');
 
-  if (citiesContainer) {
-    const cities = ['Todas', ...new Set(activeRaffles.map((raffle) => raffle.city))].sort((a, b) =>
-      a === 'Todas' ? -1 : b === 'Todas' ? 1 : a.localeCompare(b, 'es'),
-    );
-
-    cities.forEach((city) => {
+  // Sin ciudades en el contrato, la fila de chips sencillamente no se pinta.
+  if (citiesContainer && cities.length > 0) {
+    [t('hero.allCities'), ...cities].forEach((city) => {
       const chip = document.createElement('button');
       chip.type = 'button';
       const isActive = city === selectedCity;

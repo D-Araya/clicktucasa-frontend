@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 /**
  * Modelo de dominio del boleto (Ticket), replicando el contrato del backend
  * Java (domain.entity.Ticket / domain.entity.TicketStatus / domain.valueobject.TicketPrice).
@@ -5,7 +7,7 @@
 
 /**
  * Estados posibles de un boleto. Enum estricto, idéntico al del backend:
- * nunca se controla este estado con un `string` libre (Pilar 1).
+ * nunca se controla este estado con un `string` libre.
  *
  * Ojo: la "selección" del usuario NO es un estado del boleto — es estado
  * de la interfaz, y por eso vive en la cesta del componente, no aquí.
@@ -16,12 +18,17 @@ export enum TicketStatus {
   SOLD = 'SOLD',
 }
 
-/** Etiquetas legibles para el estado de un boleto. */
-export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
-  [TicketStatus.AVAILABLE]: 'Disponible',
-  [TicketStatus.RESERVED]: 'Reservado',
-  [TicketStatus.SOLD]: 'Vendido',
-};
+/** Etiqueta legible del estado de un boleto, en el idioma activo. */
+export function ticketStatusLabel(status: TicketStatus): string {
+  switch (status) {
+    case TicketStatus.AVAILABLE:
+      return t('ticket.available');
+    case TicketStatus.RESERVED:
+      return t('ticket.reserved');
+    case TicketStatus.SOLD:
+      return t('ticket.sold');
+  }
+}
 
 /**
  * Value object: precio de un boleto. Debe ser siempre > 0 (la misma regla
@@ -35,7 +42,7 @@ export interface TicketPrice {
 
 export function createTicketPrice(amount: number): TicketPrice {
   if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error('El precio del boleto debe ser un número mayor a 0.');
+    throw new Error(t('error.invalidTicketPrice'));
   }
   return { amount };
 }

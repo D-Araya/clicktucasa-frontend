@@ -3,7 +3,7 @@ import type { Raffle } from '../../models';
 import {
   type BatchTicketResult,
   PaymentMethod,
-  PAYMENT_METHOD_LABELS,
+  paymentMethodLabel,
 } from '../../models/requests.model';
 import { formatNumber, formatCurrencyCLP, getErrorMessage } from '../../utils/format.utils';
 import {
@@ -16,6 +16,7 @@ import {
 } from '../../utils/validation.utils';
 import { createFormField } from '../FormField';
 import { renderIcon } from '../../utils/icon.utils';
+import { plural, t } from '../../i18n';
 
 export interface PurchaseFormHandle {
   element: HTMLElement;
@@ -43,12 +44,11 @@ export function createPurchaseFormElement(
   const heading = document.createElement('h3');
   heading.className = 'flex items-center gap-2 text-base font-bold text-white font-display mb-1';
   heading.innerHTML = renderIcon('shield', 'w-4 h-4 text-emerald-400');
-  heading.appendChild(document.createTextNode('Comprar y quedar inscrito'));
+  heading.appendChild(document.createTextNode(t('purchase.title')));
 
   const subtitle = document.createElement('p');
   subtitle.className = 'text-[11px] text-slate-500 mb-4';
-  subtitle.textContent =
-    'Los datos del titular quedan registrados en el acta notarial del sorteo.';
+  subtitle.textContent = t('purchase.subtitle');
 
   const form = document.createElement('form');
   form.id = `form-comprar-${raffle.id}`;
@@ -74,22 +74,22 @@ export function createPurchaseFormElement(
 
   const nameField = createFormField({
     id: `comprar-nombre-${raffle.id}`,
-    label: 'Nombre completo',
-    placeholder: 'Ada Lovelace',
+    label: t('purchase.fullName'),
+    placeholder: t('purchase.fullNamePlaceholder'),
     validate: validateFullName,
   });
 
   const emailField = createFormField({
     id: `comprar-email-${raffle.id}`,
-    label: 'Correo electrónico',
+    label: t('purchase.email'),
     type: 'email',
-    placeholder: 'nombre@correo.cl',
+    placeholder: t('purchase.emailPlaceholder'),
     validate: validateEmail,
   });
 
   const rutField = createFormField({
     id: `comprar-rut-${raffle.id}`,
-    label: 'RUT',
+    label: t('purchase.rut'),
     placeholder: '12.345.678-5',
     validate: validateRut,
     liveFormat: formatRut,
@@ -97,7 +97,7 @@ export function createPurchaseFormElement(
 
   const phoneField = createFormField({
     id: `comprar-telefono-${raffle.id}`,
-    label: 'Teléfono móvil',
+    label: t('purchase.phone'),
     placeholder: '+56 9 1234 5678',
     validate: validateChileanPhone,
     liveFormat: formatChileanPhone,
@@ -110,12 +110,12 @@ export function createPurchaseFormElement(
 
   const paymentLabel = document.createElement('p');
   paymentLabel.className = 'block text-xs font-semibold text-slate-300 mb-1.5';
-  paymentLabel.textContent = 'Medio de pago';
+  paymentLabel.textContent = t('purchase.paymentMethod');
 
   const paymentGrid = document.createElement('div');
   paymentGrid.className = 'grid grid-cols-2 sm:grid-cols-4 gap-2';
   paymentGrid.setAttribute('role', 'radiogroup');
-  paymentGrid.setAttribute('aria-label', 'Medio de pago');
+  paymentGrid.setAttribute('aria-label', t('purchase.paymentMethod'));
 
   const paymentButtons = new Map<PaymentMethod, HTMLButtonElement>();
 
@@ -133,7 +133,7 @@ export function createPurchaseFormElement(
     const button = document.createElement('button');
     button.type = 'button';
     button.setAttribute('role', 'radio');
-    button.textContent = PAYMENT_METHOD_LABELS[method];
+    button.textContent = paymentMethodLabel(method);
     button.addEventListener('click', () => {
       paymentMethod = method;
       paintPaymentButtons();
@@ -155,8 +155,7 @@ export function createPurchaseFormElement(
   termsCheckbox.className = 'mt-0.5 accent-indigo-500 cursor-pointer';
 
   const termsText = document.createElement('span');
-  termsText.textContent =
-    'Acepto las bases notariales del sorteo y autorizo el registro de mis datos en el acta.';
+  termsText.textContent = t('purchase.terms');
 
   termsLabel.append(termsCheckbox, termsText);
 
@@ -188,14 +187,18 @@ export function createPurchaseFormElement(
     selection = selected;
     cartCount.textContent =
       selected.length === 0
-        ? 'Sin boletos seleccionados'
-        : `${formatNumber(selected.length)} ${selected.length === 1 ? 'boleto' : 'boletos'} en la cesta`;
+        ? t('purchase.noSelection')
+        : plural('purchase.cartCount.one', 'purchase.cartCount.other', selected.length, {
+            count: formatNumber(selected.length),
+          });
     cartTotal.textContent = formatCurrencyCLP(selected.length * raffle.ticketPrice);
     submitButton.disabled = selected.length === 0;
     submitButton.textContent =
       selected.length === 0
-        ? 'Selecciona al menos un boleto'
-        : `Pagar ${formatCurrencyCLP(selected.length * raffle.ticketPrice)}`;
+        ? t('purchase.pickOneShort')
+        : t('purchase.submit', {
+            amount: formatCurrencyCLP(selected.length * raffle.ticketPrice),
+          });
   };
 
   async function submitPurchase(buyer: {
@@ -204,10 +207,10 @@ export function createPurchaseFormElement(
     buyerRut: string;
     buyerPhone: string;
   }): Promise<void> {
-    const originalLabel = submitButton.textContent ?? 'Pagar';
+    const originalLabel = submitButton.textContent ?? t('purchase.submit', { amount: '' }).trim();
     submitButton.disabled = true;
-    submitButton.textContent = 'Procesando pago...';
-    showFeedback('Contactando la pasarela de pago...', 'success');
+    submitButton.textContent = t('purchase.submitting');
+    showFeedback(t('purchase.contactingGateway'), 'success');
 
     try {
       const result = await RaffleService.purchaseTickets(raffle.id, selection, {
@@ -230,7 +233,7 @@ export function createPurchaseFormElement(
     clearFeedback();
 
     if (selection.length === 0) {
-      showFeedback('Selecciona al menos un boleto en la grilla.', 'error');
+      showFeedback(t('purchase.pickOne'), 'error');
       return;
     }
 
@@ -256,7 +259,7 @@ export function createPurchaseFormElement(
       return;
     }
     if (!termsCheckbox.checked) {
-      showFeedback('Debes aceptar las bases notariales para continuar.', 'error');
+      showFeedback(t('purchase.mustAcceptTerms'), 'error');
       termsCheckbox.focus();
       return;
     }

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type { Raffle } from './raffle.model';
 import type { Ticket } from './ticket.model';
 
@@ -15,12 +16,18 @@ export enum PaymentMethod {
   WALLET = 'WALLET',
 }
 
-export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  [PaymentMethod.WEBPAY]: 'Webpay Plus',
-  [PaymentMethod.TRANSFER]: 'Transferencia',
-  [PaymentMethod.MACH]: 'MACH',
-  [PaymentMethod.WALLET]: 'Billetera',
-};
+export function paymentMethodLabel(method: PaymentMethod): string {
+  switch (method) {
+    case PaymentMethod.WEBPAY:
+      return t('payment.webpay');
+    case PaymentMethod.TRANSFER:
+      return t('payment.transfer');
+    case PaymentMethod.MACH:
+      return t('payment.mach');
+    case PaymentMethod.WALLET:
+      return t('payment.wallet');
+  }
+}
 
 export interface ReserveTicketRequest {
   readonly raffleId: string;

@@ -1,5 +1,6 @@
 import type { ValidationResult } from '../../utils/validation.utils';
 import { renderIcon } from '../../utils/icon.utils';
+import { t } from '../../i18n';
 
 export interface FieldConfig {
   readonly id: string;
@@ -106,7 +107,7 @@ export function createFormField(config: FieldConfig): FieldHandle {
     errorElement.replaceChildren();
     errorElement.insertAdjacentHTML('beforeend', renderIcon('alert', 'w-3 h-3 shrink-0'));
     const message = document.createElement('span');
-    message.textContent = result.error ?? 'Revisa este campo.';
+    message.textContent = result.error ?? t('validation.review');
     errorElement.appendChild(message);
   };
 

@@ -10,6 +10,7 @@ import {
 } from '../../utils/validation.utils';
 import { createFormField } from '../FormField';
 import { renderIcon } from '../../utils/icon.utils';
+import { plural, t } from '../../i18n';
 
 export interface ReservationFormHandle {
   element: HTMLElement;
@@ -19,7 +20,7 @@ export interface ReservationFormHandle {
 /**
  * Reserva temporal de los boletos que están en la cesta.
  *
- * Pilar 2: `event.preventDefault()` es la primera instrucción del listener,
+ * `event.preventDefault()` es la primera instrucción del listener,
  * los valores se leen con aserciones de tipo especializadas, y cada campo
  * pasa por tres capas de validación (presencia → formato → rango) antes de
  * que se dispare la petición.
@@ -36,11 +37,11 @@ export function createReservationFormElement(
   const heading = document.createElement('h3');
   heading.className = 'flex items-center gap-2 text-base font-bold text-white font-display mb-1';
   heading.innerHTML = renderIcon('clock', 'w-4 h-4 text-amber-400');
-  heading.appendChild(document.createTextNode('Reservar sin pagar'));
+  heading.appendChild(document.createTextNode(t('reserve.title')));
 
   const subtitle = document.createElement('p');
   subtitle.className = 'text-[11px] text-slate-500 mb-4';
-  subtitle.textContent = 'Bloquea tus boletos unos minutos y completa la compra después.';
+  subtitle.textContent = t('reserve.subtitle');
 
   const form = document.createElement('form');
   form.id = `form-reservar-${raffle.id}`;
@@ -49,31 +50,34 @@ export function createReservationFormElement(
 
   const nameField = createFormField({
     id: `reservar-nombre-${raffle.id}`,
-    label: 'Nombre completo',
-    placeholder: 'Ada Lovelace',
+    label: t('purchase.fullName'),
+    placeholder: t('purchase.fullNamePlaceholder'),
     validate: validateFullName,
   });
 
   const emailField = createFormField({
     id: `reservar-email-${raffle.id}`,
-    label: 'Correo electrónico',
+    label: t('reserve.email'),
     type: 'email',
-    placeholder: 'nombre@correo.cl',
+    placeholder: t('reserve.emailPlaceholder'),
     validate: validateEmail,
   });
 
   const durationField = createFormField({
     id: `reservar-duracion-${raffle.id}`,
-    label: 'Duración de la reserva (minutos)',
+    label: t('reserve.duration'),
     type: 'number',
     initialValue: String(APP_CONFIG.DEFAULT_RESERVATION_MINUTES),
-    hint: `Entre ${APP_CONFIG.MIN_RESERVATION_MINUTES} y ${APP_CONFIG.MAX_RESERVATION_MINUTES} minutos.`,
+    hint: t('reserve.durationHint', {
+      min: APP_CONFIG.MIN_RESERVATION_MINUTES,
+      max: APP_CONFIG.MAX_RESERVATION_MINUTES,
+    }),
     validate: (value) =>
       validateIntegerInRange(
         value,
         APP_CONFIG.MIN_RESERVATION_MINUTES,
         APP_CONFIG.MAX_RESERVATION_MINUTES,
-        'La duración',
+        t('reserve.durationField'),
       ),
   });
 
@@ -111,15 +115,22 @@ export function createReservationFormElement(
     submitButton.disabled = selected.length === 0;
     submitButton.textContent =
       selected.length === 0
-        ? 'Selecciona al menos un boleto'
-        : `Reservar ${formatNumber(selected.length)} ${selected.length === 1 ? 'boleto' : 'boletos'}`;
+        ? t('reserve.noSelection')
+        : plural('reserve.submitCount.one', 'reserve.submitCount.other', selected.length, {
+            count: formatNumber(selected.length),
+          });
   };
 
   async function submitReservation(userId: string, durationMinutes: number): Promise<void> {
-    const originalLabel = submitButton.textContent ?? 'Reservar';
+    const originalLabel = submitButton.textContent ?? t('reserve.submit');
     submitButton.disabled = true;
-    submitButton.textContent = 'Reservando...';
-    showFeedback(`Bloqueando ${formatNumber(selection.length)} boletos...`, 'success');
+    submitButton.textContent = t('reserve.submitting');
+    showFeedback(
+      plural('reserve.blocking.one', 'reserve.blocking.other', selection.length, {
+        count: formatNumber(selection.length),
+      }),
+      'success',
+    );
 
     try {
       const result = await RaffleService.reserveTickets(
@@ -143,7 +154,7 @@ export function createReservationFormElement(
     clearFeedback();
 
     if (selection.length === 0) {
-      showFeedback('Selecciona al menos un boleto en la grilla.', 'error');
+      showFeedback(t('reserve.pickOne'), 'error');
       return;
     }
 

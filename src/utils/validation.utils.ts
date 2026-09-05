@@ -1,9 +1,16 @@
+import { t } from '../i18n';
+import { formatNumber } from './format.utils';
+
 /**
  * Validaciones de formulario para el mercado chileno.
  *
  * Cada validador devuelve un `ValidationResult` en vez de un booleano
  * suelto: así el formulario puede mostrar el mensaje exacto del error y,
  * cuando corresponde, el valor ya normalizado (`formatted`).
+ *
+ * Los mensajes se resuelven en el momento de validar, no al importar el
+ * módulo, de modo que cambiar de idioma con un formulario a medio llenar
+ * traduce también los errores que ya están en pantalla.
  */
 
 export interface ValidationResult {
@@ -24,18 +31,18 @@ export function validateRut(rut: string): ValidationResult {
   const cleaned = rut.replace(/[^0-9kK]/g, '').toUpperCase();
 
   if (cleaned.length === 0) {
-    return { isValid: false, error: 'El RUT es obligatorio.' };
+    return { isValid: false, error: t('validation.rut.required') };
   }
 
   if (cleaned.length < 8 || cleaned.length > 9) {
-    return { isValid: false, error: 'El RUT debe tener entre 8 y 9 caracteres.' };
+    return { isValid: false, error: t('validation.rut.length') };
   }
 
   const body = cleaned.slice(0, -1);
   const checkDigit = cleaned.slice(-1);
 
   if (!/^\d+$/.test(body)) {
-    return { isValid: false, error: 'El cuerpo del RUT solo puede contener dígitos.' };
+    return { isValid: false, error: t('validation.rut.digits') };
   }
 
   let sum = 0;
@@ -50,7 +57,7 @@ export function validateRut(rut: string): ValidationResult {
   const expectedDigit = remainder === 11 ? '0' : remainder === 10 ? 'K' : String(remainder);
 
   if (checkDigit !== expectedDigit) {
-    return { isValid: false, error: 'El dígito verificador del RUT no es correcto.' };
+    return { isValid: false, error: t('validation.rut.checkDigit') };
   }
 
   return { isValid: true, formatted: formatRut(cleaned) };
@@ -83,25 +90,25 @@ export function validateEmail(email: string): ValidationResult {
   const trimmed = email.trim();
 
   if (trimmed.length === 0) {
-    return { isValid: false, error: 'El correo electrónico es obligatorio.' };
+    return { isValid: false, error: t('validation.email.required') };
   }
 
   if ((trimmed.match(/@/g) ?? []).length !== 1) {
-    return { isValid: false, error: 'El correo debe contener exactamente un símbolo @.' };
+    return { isValid: false, error: t('validation.email.atSign') };
   }
 
   const emailPattern =
     /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 
   if (!emailPattern.test(trimmed)) {
-    return { isValid: false, error: 'El formato del correo electrónico no es válido.' };
+    return { isValid: false, error: t('validation.email.format') };
   }
 
   const domain = trimmed.split('@')[1] ?? '';
   const topLevelDomain = domain.split('.').pop() ?? '';
 
   if (topLevelDomain.length < 2) {
-    return { isValid: false, error: 'El dominio del correo no es válido.' };
+    return { isValid: false, error: t('validation.email.domain') };
   }
 
   return { isValid: true, formatted: trimmed.toLowerCase() };
@@ -111,7 +118,7 @@ export function validateEmail(email: string): ValidationResult {
 export function validateChileanPhone(phone: string): ValidationResult {
   const trimmed = phone.trim();
   if (trimmed.length === 0) {
-    return { isValid: false, error: 'El teléfono es obligatorio.' };
+    return { isValid: false, error: t('validation.phone.required') };
   }
 
   let raw = trimmed;
@@ -126,15 +133,15 @@ export function validateChileanPhone(phone: string): ValidationResult {
   }
 
   if (digits.length === 0) {
-    return { isValid: false, error: 'El teléfono es obligatorio.' };
+    return { isValid: false, error: t('validation.phone.required') };
   }
 
   if (digits.length !== 9) {
-    return { isValid: false, error: 'El teléfono móvil debe tener 9 dígitos.' };
+    return { isValid: false, error: t('validation.phone.digits') };
   }
 
   if (!digits.startsWith('9')) {
-    return { isValid: false, error: 'El teléfono móvil debe comenzar con 9.' };
+    return { isValid: false, error: t('validation.phone.prefix') };
   }
 
   return {
@@ -180,20 +187,20 @@ export function validateFullName(name: string): ValidationResult {
   const trimmed = name.trim();
 
   if (trimmed.length === 0) {
-    return { isValid: false, error: 'El nombre completo es obligatorio.' };
+    return { isValid: false, error: t('validation.name.required') };
   }
 
   if (trimmed.length < 5) {
-    return { isValid: false, error: 'El nombre debe tener al menos 5 caracteres.' };
+    return { isValid: false, error: t('validation.name.tooShort') };
   }
 
   if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s'-]+$/.test(trimmed)) {
-    return { isValid: false, error: 'El nombre solo puede contener letras.' };
+    return { isValid: false, error: t('validation.name.lettersOnly') };
   }
 
   const words = trimmed.split(/\s+/).filter((word) => word.length >= 2);
   if (words.length < 2) {
-    return { isValid: false, error: 'Ingresa al menos un nombre y un apellido.' };
+    return { isValid: false, error: t('validation.name.twoWords') };
   }
 
   return { isValid: true, formatted: trimmed };
@@ -209,19 +216,23 @@ export function validateIntegerInRange(
   const trimmed = rawValue.trim();
 
   if (trimmed.length === 0) {
-    return { isValid: false, error: `${fieldLabel} es obligatorio.` };
+    return { isValid: false, error: t('validation.integer.required', { field: fieldLabel }) };
   }
 
   // `parseInt("12abc")` devolvería 12, así que el formato se valida antes.
   if (!/^\d+$/.test(trimmed)) {
-    return { isValid: false, error: `${fieldLabel} debe ser un número entero.` };
+    return { isValid: false, error: t('validation.integer.notInteger', { field: fieldLabel }) };
   }
 
   const parsed = parseInt(trimmed, 10);
   if (parsed < min || parsed > max) {
     return {
       isValid: false,
-      error: `${fieldLabel} debe estar entre ${min.toLocaleString('es-CL')} y ${max.toLocaleString('es-CL')}.`,
+      error: t('validation.integer.range', {
+        field: fieldLabel,
+        min: formatNumber(min),
+        max: formatNumber(max),
+      }),
     };
   }
 

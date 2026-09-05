@@ -5,9 +5,9 @@ import {
   getErrorMessage,
   formatTicketNumber,
   formatNumber,
-  formatDate,
 } from '../../utils/format.utils';
 import { renderIcon } from '../../utils/icon.utils';
+import { t } from '../../i18n';
 
 export interface DrawWinnerPanelHandle {
   element: HTMLElement;
@@ -17,8 +17,9 @@ export interface DrawWinnerPanelHandle {
  * Panel administrativo de sorteo.
  *
  * El botón solo existe si la rifa cumple `canBeDrawn()` — misma regla que
- * `Raffle.canBeDrawn()` del backend. No hay autenticación real: el alcance
- * del Hito 2 lo permite explícitamente.
+ * `Raffle.canBeDrawn()` del backend. No hay autenticación: el alcance del
+ * proyecto es el motor de rifas, no la gestión de identidades. La autoridad
+ * real sigue siendo el backend, que rechaza el sorteo si no corresponde.
  */
 export function createDrawWinnerPanelElement(
   raffle: Raffle,
@@ -34,7 +35,7 @@ export function createDrawWinnerPanelElement(
 
   const title = document.createElement('h3');
   title.className = 'text-base font-bold text-white font-display';
-  title.textContent = 'Panel de administrador — Sorteo';
+  title.textContent = t('draw.title');
   header.appendChild(title);
 
   container.appendChild(header);
@@ -56,9 +57,11 @@ export function createDrawWinnerPanelElement(
 
     const info = document.createElement('p');
     info.className = 'text-xs text-slate-400 leading-relaxed';
-    info.textContent =
-      `Esta rifa aún no puede sortearse: lleva ${formatNumber(soldCount)} de ` +
-      `${formatNumber(raffle.minTicketsToDraw)} boletos vendidos (faltan ${formatNumber(missing)}).`;
+    info.textContent = t('draw.notYet', {
+      sold: formatNumber(soldCount),
+      minimum: formatNumber(raffle.minTicketsToDraw),
+      missing: formatNumber(missing),
+    });
     container.appendChild(info);
     return { element: container };
   }
@@ -70,14 +73,14 @@ export function createDrawWinnerPanelElement(
     'w-full rounded-xl bg-gradient-to-r from-amber-500 via-amber-600 to-indigo-600 ' +
     'hover:from-amber-400 hover:to-indigo-500 text-slate-950 text-sm font-black py-2.5 ' +
     'transition-all active:scale-[0.99] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed';
-  drawButton.textContent = 'Sortear ganador ante notario';
+  drawButton.textContent = t('draw.submit');
 
   async function handleDraw(): Promise<void> {
-    const originalLabel = drawButton.textContent ?? 'Sortear ganador';
+    const originalLabel = drawButton.textContent ?? t('draw.submit');
     drawButton.disabled = true;
-    drawButton.textContent = 'Sorteando...';
+    drawButton.textContent = t('draw.submitting');
     feedback.className = 'text-xs text-slate-400 mb-3';
-    feedback.textContent = 'Seleccionando un boleto ganador entre los vendidos...';
+    feedback.textContent = t('draw.working');
 
     try {
       const result = await RaffleService.drawWinner(raffle.id);
@@ -106,27 +109,25 @@ function buildWinnerResult(winner: NonNullable<Raffle['winner']>): HTMLElement {
 
   const heading = document.createElement('p');
   heading.className = 'font-bold text-emerald-300';
-  heading.textContent = '¡Rifa sorteada!';
+  heading.textContent = t('draw.done');
 
   const ticketLine = document.createElement('p');
   ticketLine.className = 'text-2xl font-black text-white font-mono tracking-wider';
   ticketLine.textContent = formatTicketNumber(winner.ticketNumber);
 
-  const ownerLine = document.createElement('p');
-  ownerLine.className = 'text-sm text-slate-300 break-all';
-  // textContent, nunca innerHTML: `ownerId` proviene de lo que escribe
-  // la persona en el formulario de compra.
-  ownerLine.textContent = `Titular: ${winner.ownerId}`;
+  result.append(heading, ticketLine);
 
-  const dateLine = document.createElement('p');
-  dateLine.className = 'text-[11px] text-slate-500';
-  dateLine.textContent = `Sorteado el ${formatDate(winner.drawnAt)}`;
+  // El titular solo se conoce en la vista de detalle, donde sí llega la
+  // grilla de boletos. La fecha y el hash del acta no forman parte del
+  // contrato del backend, así que no se muestran en vez de inventarse.
+  if (winner.ownerId !== undefined) {
+    const ownerLine = document.createElement('p');
+    ownerLine.className = 'text-sm text-slate-300 break-all';
+    // textContent, nunca innerHTML: `ownerId` proviene de lo que escribe
+    // la persona en el formulario de compra.
+    ownerLine.textContent = t('draw.holder', { owner: winner.ownerId });
+    result.appendChild(ownerLine);
+  }
 
-  const hashBlock = document.createElement('p');
-  hashBlock.className =
-    'p-2 rounded-lg bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-400 break-all select-all';
-  hashBlock.textContent = `Hash del acta: ${winner.verificationHash}`;
-
-  result.append(heading, ticketLine, ownerLine, dateLine, hashBlock);
   return result;
 }

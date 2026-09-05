@@ -1,87 +1,88 @@
+import { APP_CONFIG } from '../config/app.config';
 import {
   type Raffle,
-  RaffleStatus,
-  type Ticket,
-  type TicketPrice,
-  TicketStatus,
-  type HouseSpecs,
-  type NotaryCertification,
+  type RaffleCatalogItem,
   type RaffleWinner,
-  type EnergyRating,
+  RaffleStatus,
   createHouseAddress,
   createHouseValue,
-  createTicketPrice,
-  canBeDrawn,
-  isReservationExpired,
-} from '../models';
+} from '../models/raffle.model';
+import { type Ticket, TicketStatus, createTicketPrice } from '../models/ticket.model';
 import type {
-  ReserveTicketRequest,
-  PurchaseTicketRequest,
-  DrawWinnerResult,
   BatchTicketResult,
+  DrawWinnerResult,
+  PurchaseTicketRequest,
+  ReserveTicketRequest,
 } from '../models/requests.model';
-import { APP_CONFIG, RAFFLE_DEFAULTS } from '../config/app.config';
-import { getErrorMessage } from '../utils/format.utils';
 import {
-  RaffleNotFoundError,
-  TicketNotFoundError,
-  TicketNotAvailableError,
+  ApiTransportError,
   InvalidRaffleOperationError,
   PaymentFailedError,
-  SimulatedServerError,
+  RaffleNotFoundError,
+  TicketNotAvailableError,
 } from './errors';
+import { getErrorMessage } from '../utils/format.utils';
+import { t } from '../i18n';
 
-// ─────────────────────────────────────────────────────────────────────
-// Guardias y lectores de datos externos.
-//
-// `response.json()` devuelve datos sobre los que el frontend no tiene
-// ninguna garantía. En vez de "creerle" al compilador con un cast, cada
-// campo se lee desde `unknown` y se reconstruye con su tipo real y un
-// valor por defecto razonable. Es la frontera exacta entre "el mundo
-// externo" y el dominio estrictamente tipado de la aplicación.
-// ─────────────────────────────────────────────────────────────────────
+/**
+ * Cliente HTTP del microservicio ClickTuCasa.
+ *
+ * Toda la lógica de negocio vive en el backend Java: aquí no se decide si
+ * un boleto puede reservarse ni si un pago prospera, solo se traduce entre
+ * el JSON de la API y el modelo tipado del frontend. El desempaquetado de
+ * cada respuesta pasa por dos fases obligatorias, en este orden:
+ *
+ *   1. Validación de canal — `response.ok` ANTES de tocar el cuerpo.
+ *      `fetch` no lanza ante un 404 ni un 500, solo ante un fallo de red;
+ *      sin esta guarda un error del servidor se convertiría en un
+ *      `undefined` que revienta más tarde, dentro del render.
+ *   2. Validación de forma — `response.json()` y luego lectura campo por
+ *      campo con guardias de tipo. Nada entra al modelo sin comprobarse.
+ *
+ * Los errores del backend llegan con el contrato `ErrorResponse`
+ * ({ message, errorCode, timestamp }) que produce `GlobalExceptionHandler`,
+ * y se reconstruyen aquí como la excepción de dominio equivalente.
+ */
+
+// ─────────────────────────────────────────────────────────────────
+// Lectores estrictos: ningún `any`, ningún acceso sin comprobar
+// ─────────────────────────────────────────────────────────────────
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function readString(source: Record<string, unknown>, key: string, fallback: string): string {
-  const value = source[key];
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
+function requireRecord(value: unknown, context: string): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new ApiTransportError(t('error.badShape', { context }));
+  }
+  return value;
 }
 
-function readNumber(source: Record<string, unknown>, key: string, fallback: number): number {
+function readString(source: Record<string, unknown>, key: string, context: string): string {
   const value = source[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  if (typeof value !== 'string') {
+    throw new ApiTransportError(t('error.notText', { field: key, context }));
+  }
+  return value;
 }
 
-function readOptionalNumber(
-  source: Record<string, unknown>,
-  key: string,
-): number | undefined {
+function readNumber(source: Record<string, unknown>, key: string, context: string): number {
+  const value = source[key];
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new ApiTransportError(t('error.notNumber', { field: key, context }));
+  }
+  return value;
+}
+
+function readOptionalNumber(source: Record<string, unknown>, key: string): number | undefined {
   const value = source[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-function readBoolean(source: Record<string, unknown>, key: string, fallback: boolean): boolean {
+function readOptionalString(source: Record<string, unknown>, key: string): string | undefined {
   const value = source[key];
-  return typeof value === 'boolean' ? value : fallback;
-}
-
-function readStringArray(source: Record<string, unknown>, key: string): string[] {
-  const value = source[key];
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
-}
-
-function readNestedRecord(
-  source: Record<string, unknown>,
-  key: string,
-): Record<string, unknown> {
-  const value = source[key];
-  return isRecord(value) ? value : {};
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function readOptionalDate(source: Record<string, unknown>, key: string): Date | undefined {
@@ -90,149 +91,222 @@ function readOptionalDate(source: Record<string, unknown>, key: string): Date | 
     return undefined;
   }
   const parsed = new Date(value);
-  return isNaN(parsed.getTime()) ? undefined : parsed;
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
+/** El valor tiene que ser uno de los tres del enum del backend, sin excepción. */
 function readRaffleStatus(source: Record<string, unknown>, key: string): RaffleStatus {
   const value = source[key];
-  const allowedValues: string[] = Object.values(RaffleStatus);
-  return typeof value === 'string' && allowedValues.includes(value)
-    ? (value as RaffleStatus)
-    : RaffleStatus.ACTIVE;
+  if (
+    value === RaffleStatus.ACTIVE ||
+    value === RaffleStatus.DRAWN ||
+    value === RaffleStatus.CANCELLED
+  ) {
+    return value;
+  }
+  throw new ApiTransportError(t('error.unknownRaffleStatus', { value: String(value) }));
 }
 
-function readEnergyRating(source: Record<string, unknown>, key: string): EnergyRating {
+function readTicketStatus(source: Record<string, unknown>, key: string): TicketStatus {
   const value = source[key];
-  const allowedValues: readonly string[] = ['A', 'B', 'C', 'D'];
-  return typeof value === 'string' && allowedValues.includes(value)
-    ? (value as EnergyRating)
-    : 'C';
+  if (
+    value === TicketStatus.AVAILABLE ||
+    value === TicketStatus.RESERVED ||
+    value === TicketStatus.SOLD
+  ) {
+    return value;
+  }
+  throw new ApiTransportError(t('error.unknownTicketStatus', { value: String(value) }));
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Traducción de errores del backend a excepciones de dominio
+// ─────────────────────────────────────────────────────────────────
+
+async function toDomainError(response: Response): Promise<Error> {
+  // El `.catch` cubre un error sin cuerpo JSON: sin él tendríamos un error
+  // dentro del manejo de errores.
+  const body: unknown = await response.json().catch(() => null);
+  const payload = isRecord(body) ? body : {};
+  const message = readOptionalString(payload, 'message') ?? t('error.http', { status: response.status });
+  const errorCode = readOptionalString(payload, 'errorCode') ?? '';
+
+  switch (errorCode) {
+    case 'RESOURCE_NOT_FOUND':
+      return new RaffleNotFoundError(message);
+    case 'BUSINESS_RULE_VIOLATION':
+      return new TicketNotAvailableError(message);
+    case 'PAYMENT_FAILED':
+      return new PaymentFailedError(message);
+    case 'INVALID_INPUT':
+    case 'VALIDATION_ERROR':
+      return new InvalidRaffleOperationError(message);
+    default:
+      return new ApiTransportError(message, response.status);
+  }
+}
+
+async function request(url: string, init?: RequestInit): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch (error: unknown) {
+    // Único caso en que `fetch` lanza: el servidor no está arriba o la red
+    // cortó. Se distingue del error de negocio a propósito.
+    throw new ApiTransportError(t('error.unreachable', { detail: getErrorMessage(error) }));
+  }
+
+  if (!response.ok) {
+    throw await toDomainError(response);
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  return response.json();
+}
+
+function jsonPost(payload: unknown): RequestInit {
+  return {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Mapeo del contrato JSON al modelo tipado
+// ─────────────────────────────────────────────────────────────────
+
+function mapTicket(raw: unknown): Ticket {
+  const source = requireRecord(raw, t('context.ticket'));
+  return {
+    number: readNumber(source, 'number', t('context.ticket')),
+    price: createTicketPrice(readNumber(source, 'price', t('context.ticket'))),
+    status: readTicketStatus(source, 'status'),
+    ownerId: readOptionalString(source, 'ownerId'),
+    reservedUntil: readOptionalDate(source, 'reservedUntil'),
+  };
 }
 
 /**
- * `RaffleService` — capa de acceso a datos de ClickTuCasa.
- *
- * IMPORTANTE: esta clase es la implementación real y definitiva de las
- * operaciones de negocio de este hito, no un arnés de pruebas.
- *
- * El catálogo de rifas se obtiene con `fetch()` desde una fuente externa
- * al bundle (`public/data/raffles.json`, servida por Vite como si fuera un
- * endpoint REST), validando el canal (`response.ok`) y la forma del payload
- * (`Array.isArray`) antes de confiar en él. Las escrituras (reservar,
- * comprar, sortear) aplican las reglas de negocio y se conservan en memoria
- * porque el backend (Hito 4, Spring Boot) todavía no expone endpoints de
- * escritura.
- *
- * El día que exista ese backend, solo cambia el interior de estos métodos
- * (la URL y los verbos HTTP): la firma pública (`async ... : Promise<T>`)
- * es idéntica, así que ningún componente ni vista necesita cambiar.
+ * Campos comunes al catálogo y al detalle. Los de presentación (foto,
+ * ciudad, ficha técnica, notaría) no existen en el contrato actual, así
+ * que sencillamente no se inventan: quedan `undefined` y cada componente
+ * decide si pinta ese bloque.
  */
+function mapRaffleBase(source: Record<string, unknown>, context: string): RaffleCatalogItem {
+  const status = readRaffleStatus(source, 'status');
+  const winnerTicketNumber = readOptionalNumber(source, 'winnerTicketNumber');
+  const winner: RaffleWinner | undefined =
+    status === RaffleStatus.DRAWN && winnerTicketNumber !== undefined
+      ? { ticketNumber: winnerTicketNumber }
+      : undefined;
+
+  return {
+    id: readString(source, 'id', context),
+    title: readString(source, 'title', context),
+    houseAddress: createHouseAddress(readString(source, 'houseAddress', context)),
+    houseValue: createHouseValue(readNumber(source, 'houseValue', context)),
+    ticketPrice: readNumber(source, 'ticketPrice', context),
+    totalTickets: readNumber(source, 'totalTickets', context),
+    minTicketsToDraw: readNumber(source, 'minTicketsToDraw', context),
+    soldTickets: readNumber(source, 'soldTickets', context),
+    reservedTickets: readNumber(source, 'reservedTickets', context),
+    availableTickets: readNumber(source, 'availableTickets', context),
+    status,
+    winner,
+  };
+}
+
+function mapCatalogItem(raw: unknown): RaffleCatalogItem {
+  return mapRaffleBase(requireRecord(raw, t('context.catalog')), t('context.catalog'));
+}
+
+function mapRaffle(raw: unknown): Raffle {
+  const source = requireRecord(raw, t('context.raffle'));
+  const base = mapRaffleBase(source, t('context.raffle'));
+
+  const rawTickets = source['tickets'];
+  if (!Array.isArray(rawTickets)) {
+    throw new ApiTransportError(t('error.noTickets'));
+  }
+  const tickets = rawTickets.map(mapTicket);
+
+  // El ganador solo puede identificarse por completo cuando se tiene la
+  // grilla: el listado únicamente conoce el número del boleto.
+  const winner: RaffleWinner | undefined =
+    base.winner === undefined
+      ? undefined
+      : {
+          ticketNumber: base.winner.ticketNumber,
+          ownerId: tickets.find((ticket) => ticket.number === base.winner?.ticketNumber)?.ownerId,
+        };
+
+  return { ...base, winner, tickets };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Servicio
+// ─────────────────────────────────────────────────────────────────
+
 export class RaffleService {
-  /**
-   * Rifas que el usuario ya modificó en esta sesión. Tienen precedencia
-   * sobre lo que responde el "backend", porque representan el estado más
-   * reciente de la operación que la persona acaba de ejecutar.
-   */
-  private static readonly mutatedRaffles = new Map<string, Raffle>();
-
-  // ─────────────────────────────────────────────────────────────────
-  // Flujo 1: listar el catálogo
-  // ─────────────────────────────────────────────────────────────────
-
-  static async getAllRaffles(): Promise<Raffle[]> {
-    const catalog = await this.loadCatalog();
-    this.releaseExpiredReservations(catalog);
-    return catalog.map((raffle) => this.cloneRaffle(raffle));
+  /** Flujo 1 — catálogo: `GET /api/v1/raffles`. */
+  static async getAllRaffles(): Promise<RaffleCatalogItem[]> {
+    const data = await request(APP_CONFIG.RAFFLES_ENDPOINT);
+    if (!Array.isArray(data)) {
+      throw new ApiTransportError(t('error.catalogNotArray'));
+    }
+    return data.map(mapCatalogItem);
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // Flujo 2: detalle de una rifa (con su grilla de boletos)
-  // ─────────────────────────────────────────────────────────────────
-
+  /** Flujo 2 — detalle: `GET /api/v1/raffles/{id}`. */
   static async getRaffleById(raffleId: string): Promise<Raffle> {
-    const catalog = await this.loadCatalog();
-    this.releaseExpiredReservations(catalog);
-
-    const raffle = catalog.find((item) => item.id === raffleId);
-    if (!raffle) {
-      throw new RaffleNotFoundError(raffleId);
-    }
-
-    return this.cloneRaffle(raffle);
+    const data = await request(`${APP_CONFIG.RAFFLES_ENDPOINT}/${encodeURIComponent(raffleId)}`);
+    return mapRaffle(data);
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // Flujo 3: reservar un boleto
-  // ─────────────────────────────────────────────────────────────────
-
-  static async reserveTicket(request: ReserveTicketRequest): Promise<Raffle> {
-    await this.delay();
-    this.maybeFailNetwork();
-
-    const raffle = await this.getMutableRaffle(request.raffleId);
-    this.assertRaffleIsActive(raffle, 'reservar');
-
-    const ticket = this.findTicketOrThrow(raffle, request.ticketNumber);
-    this.releaseIfExpired(ticket);
-
-    if (ticket.status !== TicketStatus.AVAILABLE) {
-      throw new TicketNotAvailableError(
-        `El boleto #${request.ticketNumber} ya no está disponible (estado actual: ${ticket.status}).`,
-      );
-    }
-
-    if (
-      request.durationMinutes < APP_CONFIG.MIN_RESERVATION_MINUTES ||
-      request.durationMinutes > APP_CONFIG.MAX_RESERVATION_MINUTES
-    ) {
-      throw new InvalidRaffleOperationError(
-        `La duración de la reserva debe estar entre ${APP_CONFIG.MIN_RESERVATION_MINUTES} y ${APP_CONFIG.MAX_RESERVATION_MINUTES} minutos.`,
-      );
-    }
-
-    ticket.status = TicketStatus.RESERVED;
-    ticket.ownerId = request.userId;
-    ticket.reservedUntil = new Date(Date.now() + request.durationMinutes * 60_000);
-
-    return this.cloneRaffle(raffle);
+  /** Flujo 3 — reservar un boleto. Devuelve la rifa ya actualizada. */
+  static async reserveTicket(request_: ReserveTicketRequest): Promise<Raffle> {
+    const url =
+      `${APP_CONFIG.RAFFLES_ENDPOINT}/${encodeURIComponent(request_.raffleId)}` +
+      `/tickets/${request_.ticketNumber}/reservations`;
+    const data = await request(
+      url,
+      jsonPost({ userId: request_.userId, durationMinutes: request_.durationMinutes }),
+    );
+    return mapRaffle(data);
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // Flujo 4: comprar un boleto (dispara el cobro simulado)
-  // ─────────────────────────────────────────────────────────────────
-
-  static async purchaseTicket(request: PurchaseTicketRequest): Promise<Raffle> {
-    await this.delay();
-    this.maybeFailNetwork();
-
-    const raffle = await this.getMutableRaffle(request.raffleId);
-    this.assertRaffleIsActive(raffle, 'comprar');
-
-    const ticket = this.findTicketOrThrow(raffle, request.ticketNumber);
-    this.releaseIfExpired(ticket);
-
-    if (ticket.status === TicketStatus.SOLD) {
-      throw new TicketNotAvailableError(`El boleto #${request.ticketNumber} ya fue vendido.`);
-    }
-
-    if (ticket.status === TicketStatus.RESERVED && ticket.ownerId !== request.userId) {
-      throw new TicketNotAvailableError(
-        `El boleto #${request.ticketNumber} está reservado por otro usuario.`,
-      );
-    }
-
-    if (!this.processSimulatedPayment()) {
-      throw new PaymentFailedError();
-    }
-
-    ticket.status = TicketStatus.SOLD;
-    ticket.ownerId = request.userId;
-    ticket.reservedUntil = undefined;
-
-    return this.cloneRaffle(raffle);
+  /** Flujo 4 — comprar un boleto. El cobro lo resuelve el backend. */
+  static async purchaseTicket(request_: PurchaseTicketRequest): Promise<Raffle> {
+    const url =
+      `${APP_CONFIG.RAFFLES_ENDPOINT}/${encodeURIComponent(request_.raffleId)}` +
+      `/tickets/${request_.ticketNumber}/purchases`;
+    const data = await request(url, jsonPost({ userId: request_.userId }));
+    return mapRaffle(data);
   }
 
-  // ─────────────────────────────────────────────────────────────────
+  /** Flujo 5 — sortear. El backend elige el ganador; aquí solo se recarga. */
+  static async drawWinner(raffleId: string): Promise<DrawWinnerResult> {
+    const url = `${APP_CONFIG.RAFFLES_ENDPOINT}/${encodeURIComponent(raffleId)}/draw`;
+    const data = await request(url, jsonPost({}));
+    const source = requireRecord(data, t('context.draw'));
+    const winnerTicketNumber = readNumber(source, 'winnerTicketNumber', t('context.draw'));
+
+    // El endpoint de sorteo devuelve solo el boleto ganador, así que se
+    // recarga la rifa para repintar la grilla con su estado real.
+    const raffle = await this.getRaffleById(raffleId);
+    const winnerTicket = raffle.tickets.find((ticket) => ticket.number === winnerTicketNumber);
+    if (!winnerTicket) {
+      throw new ApiTransportError(t('error.winnerMissing', { number: winnerTicketNumber }));
+    }
+
+    return { raffle, winnerTicket };
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // Operaciones en lote sobre la cesta
   //
   // El backend expone un caso de uso POR BOLETO, así que la cesta se
@@ -240,7 +314,7 @@ export class RaffleService {
   // fallar por su cuenta (lo tomó otro usuario, el pago fue rechazado),
   // por eso el resultado separa éxitos de fracasos en vez de abortar
   // todo el lote al primer error.
-  // ─────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
 
   static async reserveTickets(
     raffleId: string,
@@ -286,310 +360,5 @@ export class RaffleService {
     const raffle = latestRaffle ?? (await this.getRaffleById(raffleId));
 
     return { raffle, succeeded, failed };
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Flujo 5 (administrativo): sortear un ganador
-  // ─────────────────────────────────────────────────────────────────
-
-  static async drawWinner(raffleId: string): Promise<DrawWinnerResult> {
-    await this.delay();
-    this.maybeFailNetwork();
-
-    const raffle = await this.getMutableRaffle(raffleId);
-
-    if (!canBeDrawn(raffle)) {
-      const soldCount = raffle.tickets.filter((t) => t.status === TicketStatus.SOLD).length;
-      throw new InvalidRaffleOperationError(
-        `La rifa "${raffle.title}" aún no cumple el mínimo de boletos vendidos para sortear ` +
-          `(${soldCount}/${raffle.minTicketsToDraw}).`,
-      );
-    }
-
-    const soldTickets = raffle.tickets.filter((t) => t.status === TicketStatus.SOLD);
-    const winningIndex = Math.floor(Math.random() * soldTickets.length);
-    const winnerTicket = soldTickets[winningIndex];
-
-    if (!winnerTicket) {
-      throw new InvalidRaffleOperationError('No fue posible determinar un boleto ganador.');
-    }
-
-    raffle.status = RaffleStatus.DRAWN;
-    raffle.winner = {
-      ticketNumber: winnerTicket.number,
-      ownerId: winnerTicket.ownerId ?? 'Participante sin identificar',
-      drawnAt: new Date(),
-      verificationHash: this.generateVerificationHash(raffle.id, winnerTicket.number),
-    };
-
-    return {
-      raffle: this.cloneRaffle(raffle),
-      winnerTicket: { ...winnerTicket, price: { ...winnerTicket.price } },
-    };
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Acceso a datos: fetch + validación de canal y de forma
-  // ─────────────────────────────────────────────────────────────────
-
-  private static async loadCatalog(): Promise<Raffle[]> {
-    await this.delay();
-    this.maybeFailNetwork();
-
-    const catalogFromApi = await this.fetchRaffles();
-    return catalogFromApi.map((raffle) => this.mutatedRaffles.get(raffle.id) ?? raffle);
-  }
-
-  /**
-   * Las dos fases del desempaquetado asíncrono:
-   *   1. Validación de canal — `response.ok` antes de leer el cuerpo.
-   *   2. Conversión de payload — `response.json()` + validación de forma
-   *      (`Array.isArray`) + mapeo estricto campo por campo.
-   */
-  private static async fetchRaffles(): Promise<Raffle[]> {
-    const response = await fetch(APP_CONFIG.RAFFLES_DATA_URL);
-
-    if (!response.ok) {
-      throw new Error(
-        `Error HTTP al obtener las rifas: status ${response.status} (${response.statusText}).`,
-      );
-    }
-
-    const rawData: unknown = await response.json();
-
-    if (!Array.isArray(rawData)) {
-      throw new Error('La respuesta de rifas no tiene un formato válido (se esperaba un arreglo).');
-    }
-
-    return rawData.map((item, index) => this.mapRaffle(item, index));
-  }
-
-  /** Transforma un elemento crudo del payload en una entidad `Raffle` del dominio. */
-  private static mapRaffle(item: unknown, index: number): Raffle {
-    if (!isRecord(item)) {
-      throw new Error(`La rifa en la posición ${index} no es un objeto válido.`);
-    }
-
-    const ticketPrice = readNumber(item, 'ticketPrice', 1);
-    const soldTickets = readNumber(item, 'soldTickets', 0);
-    const reservedTickets = readNumber(item, 'reservedTickets', 0);
-
-    // ⚠️ Hardcodeado en el Hito 2: el backend todavía no expone estos dos
-    // valores por rifa. Ver RAFFLE_DEFAULTS en config/app.config.ts.
-    const totalTickets = RAFFLE_DEFAULTS.TOTAL_TICKETS;
-    const minTicketsToDraw = RAFFLE_DEFAULTS.MIN_TICKETS_TO_DRAW;
-
-    const status = readRaffleStatus(item, 'status');
-
-    return {
-      id: readString(item, 'id', `raffle-${index + 1}`),
-      title: readString(item, 'title', 'Rifa sin título'),
-      tagline: readString(item, 'tagline', ''),
-      city: readString(item, 'city', 'Ciudad por confirmar'),
-      region: readString(item, 'region', ''),
-      houseAddress: createHouseAddress(readString(item, 'houseAddress', 'Dirección por confirmar')),
-      houseValue: createHouseValue(
-        readNumber(item, 'houseValue', 1),
-        readOptionalNumber(item, 'houseValueUf'),
-      ),
-      ticketPrice,
-      minTicketsToDraw,
-      imageUrl: readString(item, 'imageUrl', ''),
-      specs: this.mapSpecs(readNestedRecord(item, 'specs')),
-      notary: this.mapNotary(readNestedRecord(item, 'notary')),
-      features: readStringArray(item, 'features'),
-      endDate: readOptionalDate(item, 'endDate'),
-      tickets: this.materializeTickets(
-        createTicketPrice(ticketPrice),
-        totalTickets,
-        soldTickets,
-        reservedTickets,
-      ),
-      status,
-      winner: this.mapWinner(item, status),
-    };
-  }
-
-  private static mapSpecs(source: Record<string, unknown>): HouseSpecs {
-    return {
-      bedrooms: readNumber(source, 'bedrooms', 0),
-      bathrooms: readNumber(source, 'bathrooms', 0),
-      areaSqM: readNumber(source, 'areaSqM', 0),
-      yearBuilt: readNumber(source, 'yearBuilt', 0),
-      hasPool: readBoolean(source, 'hasPool', false),
-      hasGarage: readBoolean(source, 'hasGarage', false),
-      energyRating: readEnergyRating(source, 'energyRating'),
-    };
-  }
-
-  private static mapNotary(source: Record<string, unknown>): NotaryCertification {
-    return {
-      notaryOffice: readString(source, 'notaryOffice', 'Notaría por confirmar'),
-      cbrRegistration: readString(source, 'cbrRegistration', 'Sin inscripción'),
-      siiFiscalRole: readString(source, 'siiFiscalRole', 'Sin rol'),
-      protocolNumber: readString(source, 'protocolNumber', 'Sin repertorio'),
-      isVerified: readBoolean(source, 'isVerified', false),
-    };
-  }
-
-  private static mapWinner(
-    item: Record<string, unknown>,
-    status: RaffleStatus,
-  ): RaffleWinner | undefined {
-    if (status !== RaffleStatus.DRAWN) {
-      return undefined;
-    }
-
-    const source = readNestedRecord(item, 'winner');
-    const ticketNumber = readOptionalNumber(source, 'ticketNumber');
-    if (ticketNumber === undefined) {
-      return undefined;
-    }
-
-    return {
-      ticketNumber,
-      ownerId: readString(source, 'ownerId', 'Participante sin identificar'),
-      drawnAt: readOptionalDate(source, 'drawnAt') ?? new Date(),
-      verificationHash: readString(source, 'verificationHash', 'sin-hash'),
-    };
-  }
-
-  /**
-   * Construye la grilla completa de boletos a partir de los contadores que
-   * entrega la API. Un backend real paginaría este recurso
-   * (`GET /raffles/:id/tickets?page=n`); mientras eso no exista, el
-   * frontend materializa el inventario y la grilla lo pagina en el cliente.
-   */
-  private static materializeTickets(
-    price: TicketPrice,
-    total: number,
-    sold: number,
-    reserved: number,
-  ): Ticket[] {
-    const soldCount = Math.max(0, Math.min(sold, total));
-    const reservedCount = Math.max(0, Math.min(reserved, total - soldCount));
-    const tickets: Ticket[] = new Array<Ticket>(total);
-
-    for (let index = 0; index < total; index++) {
-      const number = index + 1;
-
-      if (index < soldCount) {
-        tickets[index] = {
-          number,
-          price,
-          status: TicketStatus.SOLD,
-          ownerId: `comprador${number}@clicktucasa.cl`,
-        };
-      } else if (index < soldCount + reservedCount) {
-        tickets[index] = {
-          number,
-          price,
-          status: TicketStatus.RESERVED,
-          ownerId: `interesado${number}@clicktucasa.cl`,
-          reservedUntil: new Date(Date.now() + 15 * 60_000),
-        };
-      } else {
-        tickets[index] = { number, price, status: TicketStatus.AVAILABLE };
-      }
-    }
-
-    return tickets;
-  }
-
-  /**
-   * Devuelve la instancia mutable de una rifa (la que vive en el mapa de
-   * mutaciones), cargándola desde la API la primera vez que se toca.
-   */
-  private static async getMutableRaffle(raffleId: string): Promise<Raffle> {
-    const alreadyMutated = this.mutatedRaffles.get(raffleId);
-    if (alreadyMutated) {
-      return alreadyMutated;
-    }
-
-    const catalogFromApi = await this.fetchRaffles();
-    const raffle = catalogFromApi.find((item) => item.id === raffleId);
-    if (!raffle) {
-      throw new RaffleNotFoundError(raffleId);
-    }
-
-    this.mutatedRaffles.set(raffleId, raffle);
-    return raffle;
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Resiliencia de red (capa auxiliar, acotada)
-  // ─────────────────────────────────────────────────────────────────
-
-  private static delay(ms: number = APP_CONFIG.SIMULATED_NETWORK_DELAY_MS): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  private static maybeFailNetwork(): void {
-    if (Math.random() < APP_CONFIG.SIMULATED_NETWORK_ERROR_RATE) {
-      throw new SimulatedServerError(
-        'No fue posible comunicarse con el servidor. Intenta nuevamente.',
-      );
-    }
-  }
-
-  private static processSimulatedPayment(): boolean {
-    return Math.random() >= APP_CONFIG.SIMULATED_PAYMENT_FAILURE_RATE;
-  }
-
-  // ─────────────────────────────────────────────────────────────────
-  // Utilidades internas de dominio
-  // ─────────────────────────────────────────────────────────────────
-
-  private static assertRaffleIsActive(raffle: Raffle, action: string): void {
-    if (raffle.status !== RaffleStatus.ACTIVE) {
-      throw new InvalidRaffleOperationError(
-        `La rifa "${raffle.title}" no está activa; no se pueden ${action} boletos.`,
-      );
-    }
-  }
-
-  private static findTicketOrThrow(raffle: Raffle, ticketNumber: number): Ticket {
-    const ticket = raffle.tickets.find((t) => t.number === ticketNumber);
-    if (!ticket) {
-      throw new TicketNotFoundError(ticketNumber, raffle.id);
-    }
-    return ticket;
-  }
-
-  private static releaseIfExpired(ticket: Ticket): void {
-    if (isReservationExpired(ticket)) {
-      ticket.status = TicketStatus.AVAILABLE;
-      ticket.ownerId = undefined;
-      ticket.reservedUntil = undefined;
-    }
-  }
-
-  /** Equivalente a `ReleaseExpiredReservationsUseCase` del backend. */
-  private static releaseExpiredReservations(raffles: Raffle[]): void {
-    for (const raffle of raffles) {
-      for (const ticket of raffle.tickets) {
-        this.releaseIfExpired(ticket);
-      }
-    }
-  }
-
-  /** Huella de verificación del acta de sorteo (determinista y trazable). */
-  private static generateVerificationHash(raffleId: string, ticketNumber: number): string {
-    const seed = `${raffleId}:${ticketNumber}:${Date.now()}`;
-    let hash = 0;
-    for (let i = 0; i < seed.length; i++) {
-      hash = (hash << 5) - hash + seed.charCodeAt(i);
-      hash |= 0;
-    }
-    return Math.abs(hash).toString(16).padStart(12, '0').slice(0, 12);
-  }
-
-  private static cloneRaffle(raffle: Raffle): Raffle {
-    return {
-      ...raffle,
-      houseAddress: { ...raffle.houseAddress },
-      houseValue: { ...raffle.houseValue },
-      tickets: raffle.tickets.map((ticket) => ({ ...ticket })),
-    };
   }
 }

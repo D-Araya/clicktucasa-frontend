@@ -1,7 +1,8 @@
-import { type Raffle, type Ticket, TicketStatus, TICKET_STATUS_LABELS } from '../../models';
+import { type Raffle, type Ticket, TicketStatus, ticketStatusLabel } from '../../models';
 import { APP_CONFIG } from '../../config/app.config';
 import { formatTicketNumber, formatNumber, formatCurrencyCLP } from '../../utils/format.utils';
 import { renderIcon } from '../../utils/icon.utils';
+import { plural, t } from '../../i18n';
 
 /**
  * Estado de navegación y selección de la grilla. Vive fuera del componente
@@ -13,6 +14,15 @@ export interface TicketGridState {
   page: number;
   onlyAvailable: boolean;
   selected: Set<number>;
+  /**
+   * Identificador de la persona que está operando la grilla, conocido en
+   * cuanto envía el primer formulario. Es lo que permite distinguir "este
+   * boleto está reservado" de "este boleto está reservado POR MÍ": el
+   * dominio del backend deja comprar un boleto que uno mismo reservó
+   * (`PurchaseTicketUseCase` acepta un RESERVED cuyo `ownerId` coincide),
+   * así que la interfaz no puede prohibirlo.
+   */
+  currentUserId?: string;
 }
 
 export function createTicketGridState(): TicketGridState {
@@ -31,6 +41,10 @@ const STATUS_STYLES: Record<TicketStatus, string> = {
   [TicketStatus.SOLD]: 'bg-slate-950 border-slate-900 text-slate-600 cursor-not-allowed opacity-50',
 };
 
+/** Reservado por la propia persona: sigue siendo operable, y se ve distinto. */
+const MINE_STYLE =
+  'bg-amber-500/20 border-amber-400/60 text-amber-200 hover:bg-amber-500/30 hover:border-amber-300';
+
 const SELECTED_STYLE =
   'bg-indigo-600 border-indigo-400 text-white font-bold shadow-md shadow-indigo-600/40 scale-105 z-10';
 
@@ -46,10 +60,29 @@ export function createTicketGridElement(
   const tickets = raffle.tickets.slice().sort((a, b) => a.number - b.number);
   const ticketByNumber = new Map<number, Ticket>(tickets.map((ticket) => [ticket.number, ticket]));
 
-  // Se descartan de la cesta los boletos que dejaron de estar disponibles
-  // (los compró otra persona mientras tanto).
+  /**
+   * Un boleto es operable si está disponible o si la propia persona lo
+   * reservó. Sin la segunda mitad, reservar la cesta la vaciaba y dejaba
+   * el formulario de compra muerto: la UI impedía algo que el dominio sí
+   * autoriza.
+   */
+  function isSelectable(ticket: Ticket): boolean {
+    if (ticket.status === TicketStatus.AVAILABLE) {
+      return true;
+    }
+    return (
+      ticket.status === TicketStatus.RESERVED &&
+      state.currentUserId !== undefined &&
+      ticket.ownerId === state.currentUserId
+    );
+  }
+
+  // Se descartan de la cesta los boletos que dejaron de ser operables
+  // (los tomó otra persona mientras tanto). Los que uno mismo acaba de
+  // reservar se conservan, para poder comprarlos a continuación.
   state.selected.forEach((number) => {
-    if (ticketByNumber.get(number)?.status !== TicketStatus.AVAILABLE) {
+    const ticket = ticketByNumber.get(number);
+    if (ticket === undefined || !isSelectable(ticket)) {
       state.selected.delete(number);
     }
   });
@@ -65,12 +98,12 @@ export function createTicketGridElement(
           ${renderIcon('ticket', 'w-5 h-5')}
         </div>
         <div>
-          <h3 class="text-base font-bold text-white font-display">Elige tus boletos</h3>
+          <h3 class="text-base font-bold text-white font-display">${t('grid.title')}</h3>
           <p id="emision-total" class="text-[11px] text-slate-500"></p>
         </div>
       </div>
       <div class="flex flex-wrap items-center gap-1.5">
-        <span class="text-[11px] text-slate-500 mr-1">Al azar:</span>
+        <span class="text-[11px] text-slate-500 mr-1">${t('grid.random')}</span>
         <button type="button" data-quick-pick="1" class="quick-pick">+1</button>
         <button type="button" data-quick-pick="5" class="quick-pick">+5</button>
         <button type="button" data-quick-pick="10" class="quick-pick">+10</button>
@@ -79,13 +112,13 @@ export function createTicketGridElement(
 
     <div class="rounded-xl bg-slate-950 border border-slate-800 shadow-inner p-3 space-y-2">
       <div class="flex flex-wrap items-center gap-2">
-        <label for="buscar-boleto" class="text-xs font-semibold text-slate-300">Buscar folio exacto</label>
+        <label for="buscar-boleto" class="text-xs font-semibold text-slate-300">${t('grid.searchLabel')}</label>
         <input
           type="number"
           id="buscar-boleto"
           min="1"
           max="${raffle.tickets.length}"
-          placeholder="N.º de boleto"
+          placeholder="${t('grid.searchPlaceholder')}"
           class="w-32 rounded-lg bg-slate-900 border border-slate-800 px-2.5 py-1.5 text-xs text-slate-100 font-mono outline-none focus:border-indigo-500 transition-colors"
         />
         <span id="rango-valido" class="text-[11px] text-slate-500 font-mono"></span>
@@ -95,24 +128,24 @@ export function createTicketGridElement(
 
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex flex-wrap gap-3 text-[11px] text-slate-400">
-        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded bg-slate-800 border border-slate-700"></span>Disponible</span>
-        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded bg-indigo-600 shadow-sm shadow-indigo-500"></span>Seleccionado</span>
-        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded bg-amber-500/20 border border-amber-500/40"></span>Reservado</span>
-        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded bg-slate-950 border border-slate-800"></span>Vendido</span>
+        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded bg-slate-800 border border-slate-700"></span>${t('grid.legend.available')}</span>
+        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded bg-indigo-600 shadow-sm shadow-indigo-500"></span>${t('grid.legend.selected')}</span>
+        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded bg-amber-500/20 border border-amber-500/40"></span>${t('grid.legend.reserved')}</span>
+        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded bg-slate-950 border border-slate-800"></span>${t('grid.legend.sold')}</span>
       </div>
       <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
         <input type="checkbox" id="filtro-disponibles" class="accent-indigo-500 cursor-pointer" />
-        Solo disponibles
+        ${t('grid.onlyAvailable')}
       </label>
     </div>
 
-    <div id="grilla-boletos" class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-1.5 max-h-80 overflow-y-auto p-2.5 rounded-2xl bg-slate-950/80 border border-slate-800" role="list" aria-label="Grilla de boletos"></div>
-    <p id="sin-boletos" class="hidden text-sm text-slate-400 py-6 text-center">No quedan boletos disponibles en esta rifa.</p>
+    <div id="grilla-boletos" class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-1.5 max-h-80 overflow-y-auto p-2.5 rounded-2xl bg-slate-950/80 border border-slate-800" role="list" aria-label="${t('grid.aria')}"></div>
+    <p id="sin-boletos" class="hidden text-sm text-slate-400 py-6 text-center">${t('grid.empty')}</p>
 
     <div class="flex items-center justify-between gap-3">
-      <button type="button" id="pagina-anterior" class="pager-btn">${renderIcon('chevronLeft', 'w-3.5 h-3.5')}<span class="hidden sm:inline">Anterior</span></button>
+      <button type="button" id="pagina-anterior" class="pager-btn">${renderIcon('chevronLeft', 'w-3.5 h-3.5')}<span class="hidden sm:inline">${t('grid.previous')}</span></button>
       <span id="indicador-pagina" class="text-[11px] text-slate-400 font-mono text-center"></span>
-      <button type="button" id="pagina-siguiente" class="pager-btn"><span class="hidden sm:inline">Siguiente</span>${renderIcon('chevronRight', 'w-3.5 h-3.5')}</button>
+      <button type="button" id="pagina-siguiente" class="pager-btn"><span class="hidden sm:inline">${t('grid.next')}</span>${renderIcon('chevronRight', 'w-3.5 h-3.5')}</button>
     </div>
 
     <div id="cesta" class="hidden rounded-2xl bg-indigo-950/40 border border-indigo-500/30 p-4 space-y-3"></div>
@@ -144,10 +177,13 @@ export function createTicketGridElement(
   const cart = container.querySelector<HTMLElement>('#cesta');
 
   if (emissionLabel) {
-    emissionLabel.textContent = `Emisión notariada de ${formatNumber(raffle.tickets.length)} boletos (del #1 al #${formatNumber(raffle.tickets.length)})`;
+    emissionLabel.textContent = t('grid.issuance', {
+      count: formatNumber(raffle.tickets.length),
+      last: formatNumber(raffle.tickets.length),
+    });
   }
   if (rangeLabel) {
-    rangeLabel.textContent = `Rango válido: 1 – ${formatNumber(raffle.tickets.length)}`;
+    rangeLabel.textContent = t('grid.validRange', { max: formatNumber(raffle.tickets.length) });
   }
 
   // Índice de celdas visibles: permite repintar UNA celda al seleccionarla
@@ -158,21 +194,22 @@ export function createTicketGridElement(
     const base =
       'h-10 rounded-lg border text-[11px] font-mono flex items-center justify-center transition-all';
     const isSelected = state.selected.has(ticket.number);
-    return `${base} ${isSelected ? SELECTED_STYLE : STATUS_STYLES[ticket.status]}`;
+    if (isSelected) {
+      return `${base} ${SELECTED_STYLE}`;
+    }
+    const isMineReserved = ticket.status === TicketStatus.RESERVED && isSelectable(ticket);
+    return `${base} ${isMineReserved ? MINE_STYLE : STATUS_STYLES[ticket.status]}`;
   }
 
   function getVisibleTickets(): Ticket[] {
     return state.onlyAvailable
-      ? tickets.filter(
-          (ticket) =>
-            ticket.status === TicketStatus.AVAILABLE || state.selected.has(ticket.number),
-        )
+      ? tickets.filter((ticket) => isSelectable(ticket) || state.selected.has(ticket.number))
       : tickets;
   }
 
   function toggleTicket(ticketNumber: number): void {
     const ticket = ticketByNumber.get(ticketNumber);
-    if (!ticket || ticket.status !== TicketStatus.AVAILABLE) {
+    if (!ticket || !isSelectable(ticket)) {
       return;
     }
 
@@ -220,8 +257,16 @@ export function createTicketGridElement(
       cell.className = cellClassName(ticket);
       cell.dataset.ticketNumber = String(ticket.number);
       cell.dataset.ticketStatus = ticket.status;
-      cell.disabled = ticket.status !== TicketStatus.AVAILABLE;
-      cell.title = `Boleto ${formatTicketNumber(ticket.number)} — ${TICKET_STATUS_LABELS[ticket.status]}`;
+      cell.disabled = !isSelectable(ticket);
+      const mineSuffix =
+        ticket.status === TicketStatus.RESERVED && isSelectable(ticket)
+          ? t('grid.reservedByYouSuffix')
+          : '';
+      cell.title =
+        t('grid.ticketTitle', {
+          number: formatTicketNumber(ticket.number),
+          status: ticketStatusLabel(ticket.status),
+        }) + mineSuffix;
       cell.setAttribute('aria-label', cell.title);
       cell.textContent = formatTicketNumber(ticket.number);
       cellByNumber.set(ticket.number, cell);
@@ -233,9 +278,13 @@ export function createTicketGridElement(
     if (pageIndicator) {
       const shownFrom = visibleTickets.length === 0 ? 0 : startIndex + 1;
       const shownTo = startIndex + pageTickets.length;
-      pageIndicator.textContent =
-        `Página ${formatNumber(state.page)} de ${formatNumber(totalPages)} · ` +
-        `${formatNumber(shownFrom)}–${formatNumber(shownTo)} de ${formatNumber(visibleTickets.length)}`;
+      pageIndicator.textContent = t('grid.page', {
+        page: formatNumber(state.page),
+        total: formatNumber(totalPages),
+        from: formatNumber(shownFrom),
+        to: formatNumber(shownTo),
+        count: formatNumber(visibleTickets.length),
+      });
     }
 
     if (prevButton) prevButton.disabled = state.page <= 1;
@@ -261,13 +310,15 @@ export function createTicketGridElement(
 
     const heading = document.createElement('p');
     heading.className = 'text-xs font-bold text-indigo-300 uppercase tracking-wider';
-    heading.textContent = `${formatNumber(selection.length)} ${selection.length === 1 ? 'boleto en tu cesta' : 'boletos en tu cesta'}`;
+    heading.textContent = plural('cart.heading.one', 'cart.heading.other', selection.length, {
+      count: formatNumber(selection.length),
+    });
 
     const clearButton = document.createElement('button');
     clearButton.type = 'button';
     clearButton.className =
       'text-[11px] text-rose-400 hover:text-rose-300 font-semibold transition-colors cursor-pointer';
-    clearButton.textContent = 'Vaciar cesta';
+    clearButton.textContent = t('cart.clear');
     clearButton.addEventListener('click', () => {
       const previous = sortedSelection();
       state.selected.clear();
@@ -308,10 +359,10 @@ export function createTicketGridElement(
     const probability = ((selection.length / raffle.tickets.length) * 100).toFixed(4);
 
     summary.append(
-      buildSummaryCell('Boletos', formatNumber(selection.length), 'text-white'),
-      buildSummaryCell('Probabilidad', `${probability}%`, 'text-emerald-400'),
+      buildSummaryCell(t('cart.tickets'), formatNumber(selection.length), 'text-white'),
+      buildSummaryCell(t('cart.probability'), `${probability}%`, 'text-emerald-400'),
       buildSummaryCell(
-        'Total a pagar',
+        t('cart.total'),
         formatCurrencyCLP(selection.length * raffle.ticketPrice),
         'text-indigo-400',
       ),
@@ -332,7 +383,7 @@ export function createTicketGridElement(
     }
 
     if (!/^\d+$/.test(trimmed)) {
-      searchResult.appendChild(buildSearchMessage('Ingresa solo dígitos.', 'error'));
+      searchResult.appendChild(buildSearchMessage(t('grid.onlyDigits'), 'error'));
       return;
     }
 
@@ -342,7 +393,10 @@ export function createTicketGridElement(
     if (!ticket) {
       searchResult.appendChild(
         buildSearchMessage(
-          `El boleto #${formatNumber(ticketNumber)} está fuera del rango 1 – ${formatNumber(raffle.tickets.length)}.`,
+          t('grid.outOfRange', {
+            number: formatNumber(ticketNumber),
+            max: formatNumber(raffle.tickets.length),
+          }),
           'error',
         ),
       );
@@ -365,23 +419,25 @@ export function createTicketGridElement(
     const statusChip = document.createElement('span');
     statusChip.className = `text-[11px] font-semibold px-2 py-0.5 rounded-full ${statusChipClass(ticket.status)}`;
     statusChip.textContent = state.selected.has(ticket.number)
-      ? 'En tu cesta'
-      : TICKET_STATUS_LABELS[ticket.status];
+      ? t('grid.inYourCart')
+      : ticket.status === TicketStatus.RESERVED && isSelectable(ticket)
+        ? t('grid.reservedByYou')
+        : ticketStatusLabel(ticket.status);
 
     info.append(badge, statusChip);
 
     const action = document.createElement('button');
     action.type = 'button';
-    const isAvailable = ticket.status === TicketStatus.AVAILABLE;
+    const isAvailable = isSelectable(ticket);
     action.disabled = !isAvailable;
     action.className = isAvailable
       ? 'rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer'
       : 'rounded-lg bg-slate-800 text-slate-500 px-3 py-1.5 text-xs font-semibold cursor-not-allowed';
     action.textContent = state.selected.has(ticket.number)
-      ? 'Quitar de la cesta'
+      ? t('grid.removeFromCart')
       : isAvailable
-        ? 'Agregar a la cesta'
-        : 'No disponible';
+        ? t('grid.addToCart')
+        : t('grid.unavailable');
     action.addEventListener('click', () => {
       toggleTicket(ticket.number);
       jumpToTicket(ticket.number);

@@ -1,12 +1,13 @@
 import {
-  type Raffle,
+  type RaffleCatalogItem,
   RaffleStatus,
   RaffleSortOrder,
-  RAFFLE_SORT_LABELS,
+  raffleSortLabel,
   summarizeRaffle,
 } from '../../models';
 import { formatNumber } from '../../utils/format.utils';
 import { renderIcon } from '../../utils/icon.utils';
+import { plural, t } from '../../i18n';
 
 /** Filtro de estado: los tres del dominio, más el pseudo-valor "todas". */
 export const ALL_STATUSES = 'ALL' as const;
@@ -31,19 +32,26 @@ export function createDefaultFilters(): CatalogFilters {
   };
 }
 
-const STATUS_TABS: ReadonlyArray<{ value: StatusFilter; label: string; activeClass: string }> = [
-  { value: ALL_STATUSES, label: 'Todas', activeClass: 'bg-indigo-600 text-white' },
-  { value: RaffleStatus.ACTIVE, label: 'Activas', activeClass: 'bg-emerald-600 text-white' },
-  { value: RaffleStatus.DRAWN, label: 'Sorteadas', activeClass: 'bg-amber-600 text-white' },
-  { value: RaffleStatus.CANCELLED, label: 'Canceladas', activeClass: 'bg-rose-600 text-white' },
-];
+/**
+ * Las pestañas de estado son una función y no una constante: un arreglo a
+ * nivel de módulo se evaluaría una sola vez y sus etiquetas se quedarían
+ * en el idioma que hubiera al importar el archivo.
+ */
+function statusTabs(): ReadonlyArray<{ value: StatusFilter; label: string; activeClass: string }> {
+  return [
+    { value: ALL_STATUSES, label: t('hero.allCities'), activeClass: 'bg-indigo-600 text-white' },
+    { value: RaffleStatus.ACTIVE, label: t('filters.status.active'), activeClass: 'bg-emerald-600 text-white' },
+    { value: RaffleStatus.DRAWN, label: t('filters.status.drawn'), activeClass: 'bg-amber-600 text-white' },
+    { value: RaffleStatus.CANCELLED, label: t('filters.status.cancelled'), activeClass: 'bg-rose-600 text-white' },
+  ];
+}
 
 /**
  * Aplica búsqueda, estado, ciudad y orden sobre el catálogo.
  * Es una función pura: la vista decide cuándo llamarla y qué hacer con
  * el resultado.
  */
-export function applyFilters(raffles: readonly Raffle[], filters: CatalogFilters): Raffle[] {
+export function applyFilters(raffles: readonly RaffleCatalogItem[], filters: CatalogFilters): RaffleCatalogItem[] {
   const needle = filters.search.trim().toLowerCase();
 
   const filtered = raffles.filter((raffle) => {
@@ -56,6 +64,8 @@ export function applyFilters(raffles: readonly Raffle[], filters: CatalogFilters
     if (needle.length === 0) {
       return true;
     }
+    // Los campos de presentación pueden no venir en el contrato: se filtran
+    // antes de unir, para no buscar dentro de la palabra "undefined".
     const haystack = [
       raffle.title,
       raffle.tagline,
@@ -63,6 +73,7 @@ export function applyFilters(raffles: readonly Raffle[], filters: CatalogFilters
       raffle.region,
       raffle.houseAddress.value,
     ]
+      .filter((part): part is string => part !== undefined)
       .join(' ')
       .toLowerCase();
     return haystack.includes(needle);
@@ -71,7 +82,7 @@ export function applyFilters(raffles: readonly Raffle[], filters: CatalogFilters
   return sortRaffles(filtered, filters.sort);
 }
 
-function sortRaffles(raffles: Raffle[], order: RaffleSortOrder): Raffle[] {
+function sortRaffles(raffles: RaffleCatalogItem[], order: RaffleSortOrder): RaffleCatalogItem[] {
   const sorted = raffles.slice();
 
   switch (order) {
@@ -103,7 +114,7 @@ function sortRaffles(raffles: Raffle[], order: RaffleSortOrder): Raffle[] {
  * filtros completo; la vista es quien decide re-renderizar.
  */
 export function createRaffleFiltersElement(
-  raffles: readonly Raffle[],
+  raffles: readonly RaffleCatalogItem[],
   filters: CatalogFilters,
   resultCount: number,
   onChange: (filters: CatalogFilters) => void,
@@ -112,9 +123,15 @@ export function createRaffleFiltersElement(
   panel.className =
     'bg-slate-950/70 backdrop-blur-md border border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-lg space-y-4';
 
-  const cities = [ALL_CITIES, ...new Set(raffles.map((raffle) => raffle.city))].sort((a, b) =>
-    a === ALL_CITIES ? -1 : b === ALL_CITIES ? 1 : a.localeCompare(b, 'es'),
-  );
+  // La ciudad es un dato de presentación que el backend no expone hoy. El
+  // selector se arma solo con las ciudades que realmente llegan, y si no
+  // llega ninguna, el control no se pinta en vez de ofrecer una lista vacía.
+  const knownCities = [...new Set(
+    raffles
+      .map((raffle) => raffle.city)
+      .filter((city): city is string => city !== undefined),
+  )].sort((a, b) => a.localeCompare(b, 'es'));
+  const cities = knownCities.length > 0 ? [ALL_CITIES, ...knownCities] : [];
 
   panel.innerHTML = `
     <div class="flex flex-col lg:flex-row lg:items-center gap-3">
@@ -126,14 +143,14 @@ export function createRaffleFiltersElement(
           type="search"
           id="filtro-busqueda"
           value="${filters.search.replace(/"/g, '&quot;')}"
-          placeholder="Buscar por casa, ciudad o dirección..."
+          placeholder="${t('filters.searchPlaceholder')}"
           class="w-full rounded-xl bg-slate-900 border border-slate-800 pl-9 pr-9 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 outline-none focus:border-indigo-500 transition-colors"
         />
         <button
           type="button"
           id="limpiar-busqueda"
           class="${filters.search ? '' : 'hidden '}absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 transition-colors cursor-pointer"
-          aria-label="Limpiar búsqueda"
+          aria-label="${t('filters.clearSearch')}"
         >${renderIcon('close', 'w-4 h-4')}</button>
       </div>
 
@@ -157,7 +174,9 @@ export function createRaffleFiltersElement(
     </div>
 
     <div class="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-      <span>Mostrando <strong class="font-mono text-slate-200">${formatNumber(resultCount)}</strong> ${resultCount === 1 ? 'propiedad' : 'propiedades'}</span>
+      <span>${plural('filters.showing.one', 'filters.showing.other', resultCount, {
+        count: `<strong class="font-mono text-slate-200">${formatNumber(resultCount)}</strong>`,
+      })}</span>
       <div id="filtros-activos" class="flex flex-wrap items-center gap-2"></div>
     </div>
   `;
@@ -165,7 +184,7 @@ export function createRaffleFiltersElement(
   // ── Tabs de estado ─────────────────────────────────────────────
   const tabsContainer = panel.querySelector<HTMLElement>('#status-tabs');
   if (tabsContainer) {
-    STATUS_TABS.forEach((tab) => {
+    statusTabs().forEach((tab) => {
       const button = document.createElement('button');
       button.type = 'button';
       const isActive = filters.status === tab.value;
@@ -182,11 +201,13 @@ export function createRaffleFiltersElement(
 
   // ── Selects ────────────────────────────────────────────────────
   const citySelect = panel.querySelector<HTMLSelectElement>('#filtro-ciudad');
-  if (citySelect) {
+  if (citySelect && cities.length === 0) {
+    citySelect.remove();
+  } else if (citySelect) {
     cities.forEach((city) => {
       const option = document.createElement('option');
       option.value = city;
-      option.textContent = city === ALL_CITIES ? 'Todas las ciudades' : city;
+      option.textContent = city === ALL_CITIES ? t('filters.allCities') : city;
       option.selected = city === filters.city;
       citySelect.appendChild(option);
     });
@@ -200,7 +221,7 @@ export function createRaffleFiltersElement(
     Object.values(RaffleSortOrder).forEach((order) => {
       const option = document.createElement('option');
       option.value = order;
-      option.textContent = RAFFLE_SORT_LABELS[order];
+      option.textContent = raffleSortLabel(order);
       option.selected = order === filters.sort;
       sortSelect.appendChild(option);
     });
@@ -239,18 +260,18 @@ export function createRaffleFiltersElement(
     const activeTags: Array<{ label: string; reset: Partial<CatalogFilters> }> = [];
 
     if (filters.city !== ALL_CITIES) {
-      activeTags.push({ label: filters.city, reset: { city: ALL_CITIES } });
+      activeTags.push({ label: t('filters.chip.city', { value: filters.city }), reset: { city: ALL_CITIES } });
     }
     if (filters.search.trim().length > 0) {
-      activeTags.push({ label: `"${filters.search.trim()}"`, reset: { search: '' } });
+      activeTags.push({ label: t('filters.chip.search', { value: filters.search.trim() }), reset: { search: '' } });
     }
     if (filters.status !== ALL_STATUSES) {
-      const tab = STATUS_TABS.find((item) => item.value === filters.status);
-      activeTags.push({ label: tab?.label ?? 'Estado', reset: { status: ALL_STATUSES } });
+      const tab = statusTabs().find((item) => item.value === filters.status);
+      activeTags.push({ label: tab?.label ?? t('filters.status.all'), reset: { status: ALL_STATUSES } });
     }
     if (filters.sort !== RaffleSortOrder.POPULAR) {
       activeTags.push({
-        label: RAFFLE_SORT_LABELS[filters.sort],
+        label: raffleSortLabel(filters.sort),
         reset: { sort: RaffleSortOrder.POPULAR },
       });
     }
@@ -274,7 +295,11 @@ export function createRaffleFiltersElement(
       resetAll.type = 'button';
       resetAll.className =
         'inline-flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-indigo-300 transition-colors cursor-pointer';
-      resetAll.innerHTML = `${renderIcon('reset', 'w-3 h-3')}<span>Restablecer filtros</span>`;
+      resetAll.innerHTML = `${renderIcon('reset', 'w-3 h-3')}<span></span>`;
+      const resetLabel = resetAll.querySelector('span');
+      if (resetLabel) {
+        resetLabel.textContent = t('filters.reset');
+      }
       resetAll.addEventListener('click', () => onChange(createDefaultFilters()));
       activeContainer.appendChild(resetAll);
     }

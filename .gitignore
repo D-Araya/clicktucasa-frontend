@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Secretos y configuracion local: nunca versionados. La negacion es
+# deliberada, `.env.*` se llevaria tambien el archivo de ejemplo, que es
+# justo lo que necesita quien evalua el proyecto.
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

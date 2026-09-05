@@ -1,4 +1,4 @@
-import { type Raffle, RaffleStatus, summarizeRaffle } from '../models';
+import { type Raffle, type RaffleCatalogItem, RaffleStatus, summarizeRaffle } from '../models';
 import type { DrawWinnerResult, BatchTicketResult } from '../models/requests.model';
 import { createNavbarElement, type NavbarHandle } from '../components/Navbar';
 import { createHeroBannerElement } from '../components/HeroBanner';
@@ -36,6 +36,7 @@ import {
   formatDate,
 } from '../utils/format.utils';
 import { renderIcon } from '../utils/icon.utils';
+import { t } from '../i18n';
 
 export interface ListCallbacks {
   onSelectRaffle: (raffleId: string) => void;
@@ -65,7 +66,8 @@ export interface DetailNotice {
  */
 export class RaffleBoardView {
   private readonly root: HTMLElement;
-  private readonly navbar: NavbarHandle;
+  private readonly onRefresh: () => void;
+  private navbar: NavbarHandle;
   private readonly content: HTMLElement;
 
   /**
@@ -82,9 +84,10 @@ export class RaffleBoardView {
     // y de forma explícita.
     const appContainer = document.getElementById('app');
     if (appContainer === null) {
-      throw new Error('No se encontró el contenedor "#app" en el documento HTML.');
+      throw new Error(t('error.appRoot'));
     }
 
+    this.onRefresh = onRefresh;
     this.root = appContainer;
     this.root.replaceChildren();
 
@@ -93,7 +96,20 @@ export class RaffleBoardView {
     this.content = document.createElement('main');
     this.content.id = 'contenido';
 
-    this.root.append(this.navbar.element, this.content, this.buildFooter());
+    this.root.append(this.navbar.element, this.content);
+  }
+
+  /**
+   * Reconstruye la barra superior con el idioma activo.
+   *
+   * La barra se arma una sola vez con `innerHTML`, así que traducirla
+   * significa reemplazarla entera. Es barato — un puñado de nodos — y
+   * evita tener que mantener referencias a cada texto suelto.
+   */
+  refreshChrome(): void {
+    const previous = this.navbar.element;
+    this.navbar = createNavbarElement(this.onRefresh);
+    previous.replaceWith(this.navbar.element);
   }
 
   // ── Catálogo ─────────────────────────────────────────────────────
@@ -104,7 +120,7 @@ export class RaffleBoardView {
     const wrapper = document.createElement('div');
     wrapper.className = 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6';
 
-    wrapper.appendChild(createInlineSpinner('Verificando folios en el Conservador de Bienes Raíces...'));
+    wrapper.appendChild(createInlineSpinner(t('state.loading.catalog')));
 
     const grid = document.createElement('div');
     grid.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6';
@@ -125,7 +141,7 @@ export class RaffleBoardView {
   }
 
   renderRaffleList(
-    raffles: readonly Raffle[],
+    raffles: readonly RaffleCatalogItem[],
     filters: CatalogFilters,
     callbacks: ListCallbacks,
   ): void {
@@ -152,8 +168,8 @@ export class RaffleBoardView {
     if (visible.length === 0) {
       wrapper.appendChild(
         createEmptyStateElement(
-          'Ninguna propiedad coincide con los filtros aplicados.',
-          'Restablecer filtros',
+          t('state.empty.filters'),
+          t('filters.reset'),
           () => callbacks.onFiltersChange(createDefaultFilters()),
         ),
       );
@@ -168,22 +184,22 @@ export class RaffleBoardView {
         {
           status: RaffleStatus.ACTIVE,
           icon: 'bolt',
-          title: 'En venta',
-          subtitle: 'Boletos disponibles ahora mismo',
+          title: t('section.active.title'),
+          subtitle: t('section.active.subtitle'),
           tone: 'emerald',
         },
         {
           status: RaffleStatus.DRAWN,
           icon: 'trophy',
-          title: 'Sorteadas',
-          subtitle: 'Resultados publicados con acta notarial',
+          title: t('section.drawn.title'),
+          subtitle: t('section.drawn.subtitle'),
           tone: 'amber',
         },
         {
           status: RaffleStatus.CANCELLED,
           icon: 'close',
-          title: 'Canceladas',
-          subtitle: 'Procesos suspendidos con devolución garantizada',
+          title: t('section.cancelled.title'),
+          subtitle: t('section.cancelled.subtitle'),
           tone: 'slate',
         },
       ];
@@ -258,13 +274,24 @@ export class RaffleBoardView {
     this.content.replaceChildren(wrapper);
   }
 
-  renderRaffleDetail(raffle: Raffle, callbacks: DetailCallbacks, notice?: DetailNotice): void {
+  renderRaffleDetail(
+    raffle: Raffle,
+    callbacks: DetailCallbacks,
+    notice?: DetailNotice,
+    currentUserId?: string,
+  ): void {
     this.navbar.setLoading(false);
 
     // Al cambiar de rifa, la paginación y la cesta vuelven a empezar.
     if (this.currentRaffleId !== raffle.id) {
       this.currentRaffleId = raffle.id;
       this.ticketGridState = createTicketGridState();
+    }
+
+    // En cuanto la persona se identifica al enviar un formulario, la grilla
+    // puede distinguir sus propias reservas de las ajenas.
+    if (currentUserId !== undefined) {
+      this.ticketGridState.currentUserId = currentUserId;
     }
 
     const wrapper = document.createElement('div');
@@ -277,7 +304,13 @@ export class RaffleBoardView {
     }
 
     wrapper.appendChild(this.buildPropertySheet(raffle));
-    wrapper.appendChild(this.buildNotaryBlock(raffle));
+    // La garantía notarial es un bloque de presentación: solo se pinta si el
+    // backend llega a exponer esos datos. Un bloque legal con campos vacíos
+    // sería peor que no mostrarlo.
+    const notaryBlock = this.buildNotaryBlock(raffle);
+    if (notaryBlock !== null) {
+      wrapper.appendChild(notaryBlock);
+    }
 
     if (raffle.status === RaffleStatus.ACTIVE) {
       const reservationHandle = createReservationFormElement(raffle, callbacks.onReservationResult);
@@ -342,16 +375,22 @@ export class RaffleBoardView {
     const media = document.createElement('div');
     media.className = 'relative aspect-[21/9] bg-slate-950 overflow-hidden';
 
-    const image = document.createElement('img');
-    image.src = raffle.imageUrl;
-    image.alt = `Fotografía de ${raffle.title}`;
-    image.referrerPolicy = 'no-referrer';
-    image.className = 'w-full h-full object-cover';
-    image.addEventListener('error', () => {
-      image.remove();
+    // La fotografía no forma parte del contrato del backend: cuando falta,
+    // el degradado hace de portada.
+    if (raffle.imageUrl !== undefined) {
+      const image = document.createElement('img');
+      image.src = raffle.imageUrl;
+      image.alt = t('card.photoAlt', { title: raffle.title });
+      image.referrerPolicy = 'no-referrer';
+      image.className = 'w-full h-full object-cover';
+      image.addEventListener('error', () => {
+        image.remove();
+        media.classList.add('bg-gradient-to-br', 'from-indigo-950', 'via-slate-900', 'to-emerald-950');
+      });
+      media.appendChild(image);
+    } else {
       media.classList.add('bg-gradient-to-br', 'from-indigo-950', 'via-slate-900', 'to-emerald-950');
-    });
-    media.appendChild(image);
+    }
 
     const overlay = document.createElement('div');
     overlay.className = 'absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent';
@@ -364,7 +403,8 @@ export class RaffleBoardView {
     location.className = 'flex items-center gap-1.5 text-xs text-indigo-300 font-semibold';
     location.innerHTML = renderIcon('mapPin', 'w-3.5 h-3.5');
     const locationText = document.createElement('span');
-    locationText.textContent = `${raffle.city}, ${raffle.region}`;
+    const place = [raffle.city, raffle.region].filter((part): part is string => part !== undefined);
+    locationText.textContent = place.length > 0 ? place.join(', ') : raffle.houseAddress.value;
     location.appendChild(locationText);
 
     const title = document.createElement('h1');
@@ -379,10 +419,6 @@ export class RaffleBoardView {
     const body = document.createElement('div');
     body.className = 'p-5 space-y-5';
 
-    const tagline = document.createElement('p');
-    tagline.className = 'text-sm text-slate-300 leading-relaxed';
-    tagline.textContent = raffle.tagline;
-
     const address = document.createElement('p');
     address.className = 'text-xs text-slate-500';
     address.textContent = raffle.houseAddress.value;
@@ -393,10 +429,10 @@ export class RaffleBoardView {
       'grid grid-cols-1 sm:grid-cols-3 gap-4 rounded-xl bg-gradient-to-br from-slate-950 to-indigo-950/30 border border-slate-800 p-4';
 
     priceBox.append(
-      this.buildStat('Valor tasado', formatCurrencyCLP(raffle.houseValue.amount), 'text-white'),
-      this.buildStat('Valor por boleto', formatCurrencyCLP(raffle.ticketPrice), 'text-indigo-400'),
+      this.buildStat(t('card.appraisedValue'), formatCurrencyCLP(raffle.houseValue.amount), 'text-white'),
+      this.buildStat(t('detail.ticketPrice'), formatCurrencyCLP(raffle.ticketPrice), 'text-indigo-400'),
       this.buildStat(
-        'Mínimo para sortear',
+        t('detail.minimumToDraw'),
         formatNumber(raffle.minTicketsToDraw),
         summary.canBeDrawn ? 'text-emerald-400' : 'text-amber-400',
       ),
@@ -405,22 +441,27 @@ export class RaffleBoardView {
     if (raffle.houseValue.ufEquivalent !== undefined) {
       const ufNote = document.createElement('p');
       ufNote.className = 'text-[11px] text-indigo-300 font-mono sm:col-span-3';
-      ufNote.textContent = `Equivalente aproximado: ${formatUF(raffle.houseValue.ufEquivalent)}`;
+      ufNote.textContent = t('detail.ufNote', { value: formatUF(raffle.houseValue.ufEquivalent) });
       priceBox.appendChild(ufNote);
     }
 
-    // Ficha técnica
+    // Ficha técnica: bloque de presentación. El contrato actual no la trae,
+    // así que la grilla queda vacía y no se agrega al cuerpo (ver más abajo).
+    const specs = raffle.specs;
     const specsGrid = document.createElement('div');
     specsGrid.className = 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3';
 
-    const specEntries: ReadonlyArray<{ icon: string; label: string; value: string }> = [
-      { icon: 'bed', label: 'Dormitorios', value: String(raffle.specs.bedrooms) },
-      { icon: 'bath', label: 'Baños', value: String(raffle.specs.bathrooms) },
-      { icon: 'area', label: 'Superficie', value: `${formatNumber(raffle.specs.areaSqM)} m²` },
-      { icon: 'building', label: 'Construcción', value: String(raffle.specs.yearBuilt) },
-      { icon: 'home', label: 'Estacionamiento', value: raffle.specs.hasGarage ? 'Sí' : 'No' },
-      { icon: 'bolt', label: 'Norma térmica', value: raffle.specs.energyRating },
-    ];
+    const specEntries: ReadonlyArray<{ icon: string; label: string; value: string }> =
+      specs === undefined
+        ? []
+        : [
+            { icon: 'bed', label: t('detail.specs.bedrooms'), value: String(specs.bedrooms) },
+            { icon: 'bath', label: t('detail.specs.bathrooms'), value: String(specs.bathrooms) },
+            { icon: 'area', label: t('detail.specs.area'), value: t('card.specs.area', { value: formatNumber(specs.areaSqM) }) },
+            { icon: 'building', label: t('detail.specs.built'), value: String(specs.yearBuilt) },
+            { icon: 'home', label: t('detail.specs.garage'), value: specs.hasGarage ? t('detail.yes') : t('detail.no') },
+            { icon: 'bolt', label: t('detail.specs.energy'), value: specs.energyRating },
+          ];
 
     specEntries.forEach((entry) => {
       const cell = document.createElement('div');
@@ -444,10 +485,10 @@ export class RaffleBoardView {
     statsGrid.className = 'grid grid-cols-2 sm:grid-cols-4 gap-3';
 
     statsGrid.append(
-      this.buildCounter('Emitidos', formatNumber(summary.totalCount), 'text-slate-200'),
-      this.buildCounter('Vendidos', formatNumber(summary.soldCount), 'text-rose-300'),
-      this.buildCounter('Reservados', formatNumber(summary.reservedCount), 'text-amber-300'),
-      this.buildCounter('Disponibles', formatNumber(summary.availableCount), 'text-emerald-300'),
+      this.buildCounter(t('detail.counter.issued'), formatNumber(summary.totalCount), 'text-slate-200'),
+      this.buildCounter(t('detail.counter.sold'), formatNumber(summary.soldCount), 'text-rose-300'),
+      this.buildCounter(t('detail.counter.reserved'), formatNumber(summary.reservedCount), 'text-amber-300'),
+      this.buildCounter(t('detail.counter.available'), formatNumber(summary.availableCount), 'text-emerald-300'),
     );
 
     const countdown = document.createElement('p');
@@ -457,16 +498,33 @@ export class RaffleBoardView {
     countdownText.textContent =
       raffle.endDate !== undefined
         ? `${formatCountdown(raffle.endDate)} · ${formatDate(raffle.endDate)}`
-        : 'Fecha de sorteo por confirmar';
+        : t('detail.drawDatePending');
     countdown.appendChild(countdownText);
 
-    body.append(tagline, address, priceBox, specsGrid, statsGrid, countdown);
+    if (raffle.tagline !== undefined) {
+      const tagline = document.createElement('p');
+      tagline.className = 'text-sm text-slate-300 leading-relaxed';
+      tagline.textContent = raffle.tagline;
+      body.appendChild(tagline);
+    }
+
+    body.append(address, priceBox);
+    if (specEntries.length > 0) {
+      body.appendChild(specsGrid);
+    }
+    body.append(statsGrid, countdown);
     card.appendChild(body);
 
     return card;
   }
 
-  private buildNotaryBlock(raffle: Raffle): HTMLElement {
+  private buildNotaryBlock(raffle: Raffle): HTMLElement | null {
+    const notary = raffle.notary;
+    const features = raffle.features ?? [];
+    if (notary === undefined && features.length === 0) {
+      return null;
+    }
+
     const block = document.createElement('section');
     block.className =
       'rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/30 border border-emerald-500/30 p-5 space-y-4';
@@ -477,26 +535,29 @@ export class RaffleBoardView {
 
     const title = document.createElement('h2');
     title.className = 'text-base font-bold text-white font-display';
-    title.textContent = 'Garantía notarial';
+    title.textContent = t('detail.notary.title');
     header.appendChild(title);
 
-    if (raffle.notary.isVerified) {
+    if (notary?.isVerified === true) {
       const verified = document.createElement('span');
       verified.className =
         'ml-auto inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full';
       verified.innerHTML = renderIcon('check', 'w-3 h-3');
-      verified.appendChild(document.createTextNode('Verificado'));
+      verified.appendChild(document.createTextNode(t('detail.notary.verified')));
       header.appendChild(verified);
     }
 
     const grid = document.createElement('div');
     grid.className = 'grid grid-cols-1 sm:grid-cols-3 gap-3';
 
-    const entries: ReadonlyArray<{ label: string; value: string }> = [
-      { label: 'Notaría / Repertorio', value: `${raffle.notary.notaryOffice} · ${raffle.notary.protocolNumber}` },
-      { label: 'Conservador de Bienes Raíces', value: raffle.notary.cbrRegistration },
-      { label: 'Rol de avalúo fiscal (SII)', value: raffle.notary.siiFiscalRole },
-    ];
+    const entries: ReadonlyArray<{ label: string; value: string }> =
+      notary === undefined
+        ? []
+        : [
+            { label: t('detail.notary.office'), value: `${notary.notaryOffice} · ${notary.protocolNumber}` },
+            { label: t('detail.notary.cbr'), value: notary.cbrRegistration },
+            { label: t('detail.notary.sii'), value: notary.siiFiscalRole },
+          ];
 
     entries.forEach((entry) => {
       const cell = document.createElement('div');
@@ -516,11 +577,11 @@ export class RaffleBoardView {
 
     block.append(header, grid);
 
-    if (raffle.features.length > 0) {
+    if (features.length > 0) {
       const list = document.createElement('ul');
       list.className = 'grid grid-cols-1 sm:grid-cols-2 gap-2';
 
-      raffle.features.forEach((feature) => {
+      features.forEach((feature) => {
         const item = document.createElement('li');
         item.className = 'flex items-start gap-2 text-xs text-slate-300';
         item.innerHTML = renderIcon('checkCircle', 'w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5');
@@ -573,22 +634,11 @@ export class RaffleBoardView {
     button.className =
       'inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-indigo-300 transition-colors cursor-pointer';
     button.innerHTML = renderIcon('chevronLeft', 'w-4 h-4');
-    button.appendChild(document.createTextNode('Volver al catálogo'));
+    button.appendChild(document.createTextNode(t('detail.back')));
     button.addEventListener('click', () => onBack());
     return button;
   }
 
-  private buildFooter(): HTMLElement {
-    const footer = document.createElement('footer');
-    footer.className = 'border-t border-slate-800/80 mt-8';
-    footer.innerHTML = `
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-500">
-        <p>ClickTuCasa · Proyecto integrador del Hito 2 — Frontend Dinámico con TypeScript y Vite.</p>
-        <p class="font-mono">Datos consumidos con <span class="text-indigo-400">fetch()</span> desde una fuente externa al bundle.</p>
-      </div>
-    `;
-    return footer;
-  }
 }
 
 export { ALL_CITIES, createDefaultFilters };

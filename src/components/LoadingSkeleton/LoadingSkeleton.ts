@@ -1,4 +1,4 @@
-/** Esqueletos de carga reutilizables (Pilar 3: feedback antes de resolver). */
+/** Esqueletos de carga reutilizables: feedback antes de que resuelva la petición. */
 
 export function createRaffleListSkeleton(count: number = 3): DocumentFragment {
   const fragment = document.createDocumentFragment();
